@@ -58,7 +58,9 @@ main {padding:var(--space-5) 0;min-height:70vh;outline:none;}
 .avocado-art {width:210px;height:220px;}
 .art-note {font-size:var(--font-small);font-weight:600;color:var(--color-primary);transform:rotate(-5deg);}
 .art-badge {background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-pill);padding:var(--space-2) var(--space-4);font-size:var(--font-small);transform:rotate(3deg);}
-.benefits,.stats {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--space-4);}
+.benefits,.stats {display:grid;gap:var(--space-4);}
+.benefits {grid-template-columns:repeat(2,minmax(0,1fr));}
+.stats {grid-template-columns:repeat(3,minmax(0,1fr));}
 .card {min-width:0;padding:var(--space-4);background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-card);}
 .card p:last-child {margin:0;color:var(--color-muted);}
 .number-tag {display:block;color:var(--color-primary);font-size:var(--font-small);margin-bottom:var(--space-3);font-weight:700;}
@@ -166,3 +168,17 @@ html[data-animations=off] *,html[data-animations=off] *::before,html[data-animat
 
 .notice-tip {margin-top:var(--space-4);}
 
+
+/* Keep the dropdown chevron comfortably inside the field. */
+select {
+  appearance:none;
+  -webkit-appearance:none;
+  padding-right:calc(var(--space-4) + 24px);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%2356645B' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;
+  background-position:right var(--space-4) center;
+  background-size:16px 16px;
+}
+@media(forced-colors:active) {
+  select {appearance:auto;-webkit-appearance:auto;background-image:none;padding-right:var(--space-3);}
+}
