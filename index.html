@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#FFF9F1">
+  <meta name="description" content="Личный планировщик питания с мягким юмором. Данные сохраняются в вашем браузере.">
+  <link rel="icon" href="data:,">
+  <title>Меню без драмы — личный планировщик</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="script.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">К содержимому</a>
+<svg class="svg-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <symbol id="avocado" viewBox="0 0 220 230">
+    <path d="M110 12C75 12 70 54 45 94 12 143 27 207 83 217c18 5 37 5 55 0 54-11 72-73 39-123-26-40-33-82-67-82Z" fill="#456E50"/>
+    <path d="M110 27C84 27 80 65 56 104c-28 43-14 91 32 101 14 4 30 4 44 0 45-10 60-58 32-101-24-38-28-77-54-77Z" fill="#D3DF91"/>
+    <ellipse cx="109" cy="158" rx="40" ry="36" fill="#BC7953"/>
+    <path d="M96 150c4-10 10-14 19-15" stroke="#DBA176" stroke-width="6" stroke-linecap="round" fill="none"/>
+    <circle cx="83" cy="96" r="5" fill="#26332D"/><circle cx="139" cy="96" r="5" fill="#26332D"/>
+    <path d="M103 103q8 10 16 0" stroke="#26332D" stroke-width="4" stroke-linecap="round" fill="none"/>
+    <ellipse cx="69" cy="108" rx="9" ry="5" fill="#EFBE9B"/><ellipse cx="151" cy="108" rx="9" ry="5" fill="#EFBE9B"/>
+    <path d="M42 143 20 131m155 9 20-15M79 215l-8 12m64-12 9 12" stroke="#456E50" stroke-width="7" stroke-linecap="round"/>
+    <rect x="169" y="111" width="43" height="57" rx="6" fill="#FFF9F1" stroke="#26332D" stroke-width="3" transform="rotate(8 190 140)"/>
+    <path d="m181 124 19 3m-20 8 17 2m-19 9 14 2" stroke="#6D8174" stroke-width="3" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="carrot" viewBox="0 0 150 150">
+    <path d="M61 44 48 18m19 26 10-28m-9 30 25-20" stroke="#52785A" stroke-width="9" stroke-linecap="round"/>
+    <path d="M38 49c14-17 41-17 54 0 9 13-11 52-33 78-6 7-11 9-14-1-9-29-18-63-7-77Z" fill="#E6A679"/>
+    <path d="m44 69 12-2m-10 21 9-2" stroke="#C98253" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="52" cy="54" r="3" fill="#26332D"/><circle cx="72" cy="54" r="3" fill="#26332D"/>
+    <path d="m57 63 8 0" stroke="#26332D" stroke-width="3" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="coffee-cup" viewBox="0 0 150 150">
+    <path d="M105 56h8c32 0 32 41 0 41h-8" fill="none" stroke="#56755F" stroke-width="9"/>
+    <path d="M28 48h78v40c0 46-78 46-78 0Z" fill="#DDE8D6" stroke="#56755F" stroke-width="4"/>
+    <ellipse cx="67" cy="49" rx="38" ry="9" fill="#AF7957"/>
+    <circle cx="53" cy="79" r="3" fill="#26332D"/><circle cx="80" cy="79" r="3" fill="#26332D"/>
+    <path d="M60 89q7 6 13 0m-17-53q-9-8 0-17m23 17q-9-8 0-17" fill="none" stroke="#56755F" stroke-width="3" stroke-linecap="round"/>
+    <path d="M19 124h96" stroke="#56755F" stroke-width="5" stroke-linecap="round"/>
+  </symbol>
+</svg>
+<div class="app-shell">
+  <header class="site-header">
+    <a class="brand" href="#main" aria-label="Меню без драмы, начало страницы">
+      <span class="brand-icon" aria-hidden="true">м.</span>
+      <span>меню без драмы<span class="brand-subtitle">немного порядка. много заботы.</span></span>
+    </a>
+    <span id="saveStatus" class="storage-label">Данные только в вашем браузере</span>
+  </header>
+  <div id="storageBanner" class="notice notice-error" role="alert" hidden>
+    <p id="storageMessage"></p>
+    <div class="button-row">
+      <button id="retrySave" class="button small secondary" type="button">Повторить сохранение</button>
+      <button id="emergencyExport" class="button small secondary" type="button">Скачать текущие данные</button>
+      <button id="reloadState" class="button small secondary" type="button" hidden>Обновить страницу</button>
+    </div>
+  </div>
+  <nav class="main-nav" aria-label="Разделы">
+    <button type="button" data-tab="week" aria-current="page"><span aria-hidden="true">▦</span> Неделя</button>
+    <button type="button" data-tab="recipes"><span aria-hidden="true">▤</span> Блюда</button>
+    <button type="button" data-tab="shopping"><span aria-hidden="true">✓</span> Покупки</button>
+    <button type="button" data-tab="weight"><span aria-hidden="true">↗</span> Вес</button>
+    <button type="button" data-tab="settings"><span aria-hidden="true">⚙</span> Настройки</button>
+  </nav>
+  <main id="main" tabindex="-1">
+    <section id="welcome" aria-labelledby="welcomeTitle">
+      <div class="hero">
+        <div class="hero-copy">
+          <span class="eyebrow">Планируем еду. Оставляем место для жизни.</span>
+          <h1 id="welcomeTitle">Меньше «что поесть?».<br>Больше спокойствия.</h1>
+          <p class="lead">Начнём с вас: настроим профиль и ориентир по калориям. Без строгого начальника в холодильнике.</p>
+          <div class="button-row">
+            <button class="button primary" type="button" data-action="open-profile">Настроить профиль <span aria-hidden="true">→</span></button>
+            <button class="button text-button" type="button" data-action="skip-profile">Без персонального расчёта</button>
+          </div>
+          <p class="subtle">Пока доступна настройка профиля. Меню и покупки появятся в следующей версии.</p>
+        </div>
+        <div class="hero-art">
+          <span class="art-note">Авокадо уже записывает</span>
+          <svg class="avocado-art" aria-hidden="true"><use href="#avocado"></use></svg>
+          <span class="art-badge">план — не начальник</span>
+        </div>
+      </div>
+      <div class="benefits">
+        <article class="card"><span class="number-tag">01</span><h2>Ваш ориентир</h2><p>Расчёт калорий, своя цель или планирование без цифр — выбираете вы.</p></article>
+        <article class="card"><span class="number-tag">02</span><h2>Ваши привычки</h2><p>Простые блюда, подходящее время готовки и продукты, которые вам нравятся.</p></article>
+        <article class="card"><span class="number-tag">03</span><h2>Ваш браузер</h2><p>Личные данные остаются здесь. Аккаунты и автоматическая синхронизация не нужны.</p></article>
+      </div>
+    </section>
+    <section id="recovery" class="card recovery-card" hidden aria-labelledby="recoveryTitle">
+      <span class="eyebrow">Сначала сохраним важное</span>
+      <h1 id="recoveryTitle">Данные не удалось прочитать</h1>
+      <p id="recoveryReason"></p>
+      <p>Исходные данные не изменены. Скачайте их перед тем, как начинать заново.</p>
+      <div class="button-row"><button id="downloadOriginal" class="button primary" type="button">Скачать исходные данные</button><button id="resetBroken" class="button secondary" type="button">Начать заново</button></div>
+    </section>
+    <section id="workspace" hidden>
+      <div class="page-heading"><div><span class="eyebrow" id="sectionEyebrow">Своя еда. Свой ритм.</span><h1 id="sectionTitle">Неделя без драмы</h1></div><span class="pill">Профиль готов</span></div>
+      <div id="weekBar" class="week-bar">
+        <button type="button" class="icon-button" aria-label="Предыдущая неделя" disabled title="Планирование ещё недоступно">←</button>
+        <span id="weekLabel"></span>
+        <button type="button" class="icon-button" aria-label="Следующая неделя" disabled title="Планирование ещё недоступно">→</button>
+        <button type="button" class="button secondary small" disabled>Текущая неделя</button>
+      </div>
+      <div id="panelContent"></div>
+    </section>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </main>
+  <footer class="site-footer"><span>Не идеальная неделя. Ваша неделя.</span><span>Меню без драмы · личное пространство</span></footer>
+</div>
+
+<dialog id="profileDialog" aria-labelledby="profileTitle">
+  <div class="dialog-heading"><div><span id="wizardCounter" class="eyebrow">1 из 2 · знакомимся</span><h2 id="profileTitle">Начнём с вас</h2></div><button id="closeProfile" type="button" class="icon-button" aria-label="Закрыть профиль">×</button></div>
+  <div class="wizard-track" aria-hidden="true"><span class="active"></span><span id="trackSecond"></span></div>
+  <form id="profileForm" novalidate>
+    <div id="wizardStepOne">
+      <p class="form-intro">Параметры нужны для приблизительного расчёта. Можно пользоваться планировщиком без него.</p>
+      <button id="skipPersonal" class="button text-button skip-calculation" type="button">Пользоваться без персонального расчёта</button>
+      <p id="skipExplanation" class="notice" hidden>Личные параметры пропущены. Вы сможете планировать без цели по калориям или задать её самостоятельно.</p>
+      <fieldset id="personalFields"><legend class="sr-only">Личные параметры</legend>
+        <div class="form-grid">
+          <div class="field"><label for="age">Возраст, лет</label><input id="age" name="age" type="text" inputmode="numeric" maxlength="3" autocomplete="off" aria-describedby="ageError"><p class="field-error" id="ageError"></p></div>
+          <div class="field"><label for="heightCm">Рост, см</label><input id="heightCm" name="heightCm" type="text" inputmode="decimal" maxlength="8" autocomplete="off" aria-describedby="heightCmError"><p class="field-error" id="heightCmError"></p></div>
+          <div class="field"><label for="baselineWeightKg">Текущий вес, кг</label><input id="baselineWeightKg" name="baselineWeightKg" type="text" inputmode="decimal" maxlength="8" autocomplete="off" aria-describedby="baselineWeightKgError"><p class="field-error" id="baselineWeightKgError"></p></div>
+          <div class="field"><label for="goalWeightKg">Желаемый вес, кг</label><input id="goalWeightKg" name="goalWeightKg" type="text" inputmode="decimal" maxlength="8" autocomplete="off" aria-describedby="goalWeightKgError"><p class="field-error" id="goalWeightKgError"></p></div>
+          <div class="field"><label for="formulaSex">Пол для расчётной формулы</label><select id="formulaSex" name="formulaSex" aria-describedby="formulaSexError"><option value="">Выберите вариант</option><option value="female">Женский</option><option value="male">Мужской</option><option value="none">Не использовать формулу</option></select><p class="field-error" id="formulaSexError"></p></div>
+          <div class="field"><label for="activityFactor">Уровень активности</label><select id="activityFactor" name="activityFactor" aria-describedby="activityFactorError"><option value="">Выберите вариант</option><option value="1.2">Низкая · в основном сидя</option><option value="1.375">Небольшая · лёгкая активность</option><option value="1.55">Умеренная · регулярная активность</option><option value="1.725">Высокая · много движения</option></select><p class="field-error" id="activityFactorError"></p></div>
+        </div>
+        <div class="field"><label for="pregnancyStatus">Беременность или грудное вскармливание</label><select id="pregnancyStatus" name="pregnancyStatus" aria-describedby="pregnancyStatusError"><option value="">Выберите вариант</option><option value="no">Нет</option><option value="yes">Да</option><option value="unknown">Не хочу указывать</option></select><p class="field-error" id="pregnancyStatusError"></p></div>
+      </fieldset>
+      <fieldset class="exclusions"><legend>Какие продукты исключить?</legend><p class="subtle">Отметьте ограничения и то, что не любите. Пока ничего не предполагаем.</p>
+        <label class="check-line"><input id="noExclusions" name="noExclusions" type="checkbox"> Нет исключений</label>
+        <label for="ingredientSearch" class="sr-only">Поиск продукта</label><input id="ingredientSearch" type="search" placeholder="Найти продукт" autocomplete="off">
+        <div id="ingredientOptions" class="ingredient-options"></div>
+        <p id="ingredientEmpty" class="subtle" hidden>По этому запросу продуктов нет.</p><p class="field-error" id="exclusionsError"></p>
+      </fieldset>
+    </div>
+    <div id="wizardStepTwo" hidden>
+      <p class="form-intro">Ориентир помогает планировать. Он не обещает конкретный результат на весах.</p>
+      <div class="form-grid">
+        <div class="field"><label for="goalMode">Как выбрать калорийную цель?</label><select id="goalMode" name="goalMode"><option value="calculated">Ориентировочный расчёт</option><option value="manual">Ввести свою цель</option><option value="none">Планировать без цели</option></select></div>
+        <div class="field"><label for="lossPreference">Пожелание по темпу</label><select id="lossPreference" name="lossPreference"><option value="0">Поддержание веса</option><option value="0.25">Снижение · 0,25 кг в неделю</option><option value="0.5">Снижение · 0,5 кг в неделю</option></select></div>
+      </div>
+      <div id="manualGoalField" class="field" hidden><label for="dailyKcalGoal">Дневная цель, ккал</label><input id="dailyKcalGoal" name="dailyKcalGoal" type="text" inputmode="numeric" maxlength="4" aria-describedby="dailyKcalGoalError"><p class="field-error" id="dailyKcalGoalError"></p></div>
+      <div id="goalPreview" class="goal-preview" aria-live="polite"></div>
+      <label id="lowGoalWarning" class="check-line warning" hidden><input id="manualGoalConfirmed" name="manualGoalConfirmed" type="checkbox"><span>Цель ниже порога автоматического расчёта. Эта цель выбрана мной; подтверждаю свой выбор.</span></label>
+      <p class="field-error" id="goalModeError"></p>
+      <fieldset class="preferences"><legend>Чтобы было удобно</legend>
+        <div class="field"><label for="maxPrepMinutes">Сколько времени готовить?</label><select id="maxPrepMinutes" name="maxPrepMinutes"><option value="15">До 15 минут</option><option value="20">До 20 минут</option><option value="30">До 30 минут</option></select></div>
+        <label class="check-line"><input id="allowReadyMeals" name="allowReadyMeals" type="checkbox"> Разрешать готовые покупные блюда</label>
+        <label class="check-line"><input id="allowRepeats" name="allowRepeats" type="checkbox"> Разрешать повторение блюд</label>
+        <label class="check-line"><input id="autoSnack" name="autoSnack" type="checkbox"> Добавлять перекус при подборе меню</label>
+        <label class="check-line"><input id="tipsEnabled" name="tipsEnabled" type="checkbox"> Добрые подсказки с юмором</label>
+        <label class="check-line"><input id="animationsEnabled" name="animationsEnabled" type="checkbox"> Короткие анимации интерфейса</label>
+      </fieldset>
+      <label id="applyGoalField" class="check-line" hidden><input id="applyGoal" type="checkbox"><span>Применить новую цель начиная с сегодня. Прошлые цели и выбранные блюда сохранятся.</span></label>
+    </div>
+    <div id="discardPrompt" class="notice discard-prompt" hidden role="alert"><p>Изменения ещё не сохранены. Выйти без них?</p><div class="button-row"><button id="stayEditing" type="button" class="button primary small">Остаться</button><button id="discardChanges" type="button" class="button secondary small">Выйти без сохранения</button></div></div>
+    <div id="wizardActions" class="dialog-actions"><button id="wizardBack" type="button" class="button secondary" hidden>Назад</button><button id="wizardNext" type="submit" class="button primary">Далее →</button></div>
+    <p class="subtle dialog-privacy">Сохраняем в этом браузере. Между устройствами данные автоматически не передаются.</p>
+  </form>
+</dialog>
+
+<dialog id="resetDialog" aria-labelledby="resetTitle">
+  <div class="dialog-heading"><h2 id="resetTitle">Начать заново?</h2><button id="closeReset" class="icon-button" type="button" aria-label="Закрыть подтверждение">×</button></div>
+  <p>Будут удалены только данные «Меню без драмы» в этом браузере. Сначала скачайте исходную копию.</p>
+  <form id="resetForm" novalidate><div class="field"><label for="resetWord">Для подтверждения введите УДАЛИТЬ</label><input id="resetWord" type="text" autocomplete="off" aria-describedby="resetError"><p class="field-error" id="resetError"></p></div><div class="button-row"><button type="submit" class="button primary">Удалить и начать заново</button><button id="cancelReset" type="button" class="button secondary">Отмена</button></div></form>
+</dialog>
+<noscript><p class="notice">Для работы планировщика включите JavaScript в браузере.</p></noscript>
+</body>
+</html>
+
