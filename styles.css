@@ -265,3 +265,54 @@ dialog .dialog-actions {flex-wrap:wrap;position:sticky;bottom:0;background:var(-
   .shopping-row .button {font-size:.75rem;}
   .planner-tools .button {flex:1 1 140px;}
 }
+
+/* Compact week cards: meal actions live in the detail dialog. */
+.compact-entry {margin-bottom:var(--space-2);}
+.entry-summary {display:flex;align-items:flex-start;gap:var(--space-1);}
+.entry-open {display:block;flex:1;min-width:0;min-height:44px;text-align:left;border:0;border-radius:var(--radius-small);background:transparent;padding:var(--space-2) var(--space-1);line-height:1.4;overflow-wrap:anywhere;}
+.entry-open:hover {background:var(--color-soft);}
+.entry-meta {display:block;font-size:.75rem;color:var(--color-muted);margin-top:var(--space-1);}
+.pin-button {width:44px;height:44px;flex-shrink:0;display:grid;place-items:center;border:1px solid transparent;border-radius:var(--radius-small);background:transparent;color:var(--color-muted);}
+.pin-button svg {width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;}
+.pin-button:hover {background:var(--color-soft);}
+.pin-button[aria-pressed=true] {color:var(--color-primary);background:var(--color-soft);border-color:var(--color-border);}
+.entry-conflict {display:block;font-size:.75rem;color:var(--color-error);}
+.extra-slot summary {font-weight:700;font-size:.9rem;min-height:44px;cursor:pointer;}
+.entry-detail-actions {margin-bottom:var(--space-5);}
+@media(max-width:767px) {
+  .entry-meta {font-size:.875rem;}
+  .extra-slot summary {font-size:1rem;}
+}
+
+/* Drinks occupy one compact row regardless of their number. */
+.drink-summary {display:flex;align-items:center;gap:var(--space-2);width:100%;min-height:52px;margin-top:var(--space-3);padding:var(--space-2) var(--space-1);border:1px solid var(--color-border);border-radius:var(--radius-small);background:var(--color-soft);text-align:left;font-size:.75rem;line-height:1.4;}
+.drink-summary-text {display:flex;flex:1;min-width:0;flex-wrap:wrap;gap:0 var(--space-2);}
+.drink-summary-kcal {color:var(--color-muted);}
+.drink-summary-icon,.drink-summary-arrow {flex-shrink:0;}
+.drink-summary-arrow {font-size:1.2rem;color:var(--color-primary);}
+.drink-summary:hover {border-color:var(--color-primary);}
+.day-drinks-list {display:grid;gap:var(--space-3);margin-bottom:var(--space-4);}
+.drink-list-item h3 {font-size:1.1rem;}
+@media(max-width:767px) {.drink-summary {font-size:.875rem;}}
+
+/* Meal labels are distinct from dish names; day cards share a height. */
+.week-grid {align-items:stretch;grid-auto-rows:1fr;}
+.day-card .meal-slot > h3,.day-card .extra-slot > summary {
+  color:var(--color-primary);
+  background:var(--color-soft);
+  border-radius:var(--radius-small);
+  padding:var(--space-1) var(--space-2);
+  margin-bottom:var(--space-2);
+  font-size:var(--font-small);
+  font-weight:700;
+}
+.day-card [data-meal-type=breakfast] > h3 {background:var(--color-warm);}
+.day-card [data-meal-type=lunch] > h3 {background:var(--color-soft);}
+.day-card [data-meal-type=dinner] > h3 {background:var(--color-accent);}
+@media(min-width:768px) {
+  .day-card {display:flex;flex-direction:column;}
+  .day-card > * {flex-shrink:0;}
+  .day-card > .drink-summary {margin-top:auto;}
+  .day-card > .extra-slot {margin-bottom:var(--space-3);}
+  .day-card > .subtle:last-child {min-height:4.5em;margin-bottom:0;margin-top:var(--space-1);}
+}
