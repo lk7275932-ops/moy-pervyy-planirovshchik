@@ -465,7 +465,7 @@
     document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
   }
   function emergencyExport() {
-    downloadText(JSON.stringify({appId:"menu-without-drama",schemaVersion:1,catalogVersion:1,exportedAt:new Date().toISOString(),state},null,2),"menu-without-drama-"+todayDate()+".json");
+    downloadText(JSON.stringify({appId:"menu-without-drama",schemaVersion:1,catalogVersion:1,exportedAt:new Date().toISOString(),state},null,2),"lozhka-poryadka-"+todayDate()+".json");
   }
   function bindEvents() {
     document.addEventListener("click",event=>{
@@ -505,7 +505,7 @@
       if(unsaved){announce("Сначала скачайте текущие данные, чтобы сохранить изменения этой страницы.");unsaved=false;return;}
       window.location.reload();
     });
-    $("downloadOriginal").addEventListener("click",()=>downloadText(originalRaw??"","menu-without-drama-original-"+todayDate()+".json"));
+    $("downloadOriginal").addEventListener("click",()=>downloadText(originalRaw??"","lozhka-poryadka-original-"+todayDate()+".json"));
     $("resetBroken").addEventListener("click",()=>{$("resetWord").value="";$("resetError").textContent="";openModal($("resetDialog"),$("resetWord"));});
     const closeReset=()=>closeModal($("resetDialog"));
     $("closeReset").addEventListener("click",closeReset);$("cancelReset").addEventListener("click",closeReset);
@@ -529,4 +529,3 @@
   }
   buildIngredientOptions();bindEvents();loadState();render();
 })();
-
