@@ -55,7 +55,7 @@ main {padding:var(--space-5) 0;min-height:70vh;outline:none;}
 .subtle {color:var(--color-muted);font-size:var(--font-small);}
 .hero-copy>.subtle {margin-top:var(--space-4);}
 .hero-art {min-height:300px;background:var(--color-soft);border-radius:50% 45% 42% 48%;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;padding:var(--space-4);}
-.sandwich-art {width:210px;height:220px;}
+.spoon-art {width:210px;height:220px;}
 .art-note {font-size:var(--font-small);font-weight:600;color:var(--color-primary);transform:rotate(-5deg);}
 .art-badge {background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-pill);padding:var(--space-2) var(--space-4);font-size:var(--font-small);transform:rotate(3deg);}
 .benefits,.stats {display:grid;gap:var(--space-4);}
@@ -138,7 +138,7 @@ input[aria-invalid=true],select[aria-invalid=true] {border-color:var(--color-err
   .hero h1 {font-size:2.2rem;}
   .lead {font-size:1rem;margin:var(--space-4) 0;}
   .hero-art {grid-row:2;min-height:0;max-width:260px;width:100%;height:176px;justify-self:center;border-radius:var(--radius-card);padding:var(--space-2);}
-  .sandwich-art {width:118px;height:123px;}
+  .spoon-art {width:118px;height:123px;}
   .art-note,.art-badge {font-size:.65rem;}
   .art-badge {padding:var(--space-1) var(--space-3);}
   .benefits,.stats,.settings-grid {grid-template-columns:minmax(0,1fr);}
@@ -213,4 +213,55 @@ select {
 }
 @media(forced-colors:active) {
   select {appearance:auto;-webkit-appearance:auto;}
+}
+/* Step 2: planner, catalog and shopping. */
+.planner-tools {margin-bottom:var(--space-4);}
+.week-grid {display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:var(--space-2);align-items:start;}
+.day-card {padding:var(--space-3);overflow-wrap:anywhere;}
+.day-card h2 {font-size:1rem;}
+.day-card h3 {font-size:.9rem;}
+.day-card .button {padding:var(--space-2);font-size:.75rem;min-height:44px;}
+.day-card .check-line {font-size:.75rem;gap:var(--space-2);}
+.day-card p {font-size:.8rem;}
+.day-total {font-weight:700;color:var(--color-primary);}
+.meal-slot {border-top:1px solid var(--color-border);padding-top:var(--space-3);margin-top:var(--space-3);}
+.plan-entry {margin-bottom:var(--space-3);}
+.plan-entry strong {display:block;font-size:.85rem;}
+.entry-actions {display:flex;flex-wrap:wrap;gap:var(--space-1);}
+.day-switcher {display:none;}
+progress {width:100%;height:8px;accent-color:var(--color-primary);}
+.catalog-filters {display:grid;grid-template-columns:2fr 1fr 1fr;gap:var(--space-3);}
+.catalog-flags {display:flex;gap:var(--space-4);flex-wrap:wrap;margin-bottom:var(--space-3);}
+.recipe-grid {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--space-3);}
+.recipe-card h3 {font-size:1.1rem;}
+.recipe-card .button-row {gap:var(--space-2);}
+.preview-days {display:grid;gap:var(--space-3);}
+.preview-days ul {padding-left:var(--space-4);margin-bottom:0;}
+.shopping-list,.shopping-home {margin:var(--space-4) 0;}
+.shopping-row {display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);border-bottom:1px solid var(--color-border);}
+.shopping-row .check-line {flex:1;min-width:0;align-items:center;}
+.shopping-row .button {flex-shrink:0;}
+.shopping-home summary {font-weight:700;cursor:pointer;min-height:44px;}
+.bought {text-decoration:line-through;color:var(--color-muted);}
+textarea {width:100%;font:inherit;padding:var(--space-3);border:1px solid var(--color-border);border-radius:var(--radius-small);resize:vertical;}
+.food-error {margin-top:var(--space-3);}
+dialog .dialog-actions {flex-wrap:wrap;position:sticky;bottom:0;background:var(--color-bg);}
+@media(min-width:768px) and (max-width:1279px) {
+  .week-grid {grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-4);}
+  .recipe-grid {grid-template-columns:repeat(2,minmax(0,1fr));}
+}
+@media(max-width:767px) {
+  .week-grid,.recipe-grid,.catalog-filters {grid-template-columns:minmax(0,1fr);}
+  .day-card {display:none;padding:var(--space-4);}
+  .day-card.selected-day {display:block;}
+  .day-card h2 {font-size:1.3rem;}
+  .day-card h3,.plan-entry strong {font-size:1rem;}
+  .day-card p,.day-card .check-line,.day-card .button {font-size:.875rem;}
+  .day-switcher {display:flex;overflow-x:auto;gap:var(--space-2);margin-bottom:var(--space-4);padding:var(--space-1);}
+  .day-switcher .button {flex-shrink:0;}
+  .day-switcher [aria-pressed=true] {background:var(--color-soft);border-color:var(--color-primary);}
+  .catalog-flags {gap:var(--space-2);}
+  .shopping-row {align-items:flex-start;}
+  .shopping-row .button {font-size:.75rem;}
+  .planner-tools .button {flex:1 1 140px;}
 }
