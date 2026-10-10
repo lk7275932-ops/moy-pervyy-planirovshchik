@@ -316,3 +316,29 @@ dialog .dialog-actions {flex-wrap:wrap;position:sticky;bottom:0;background:var(-
   .day-card > .extra-slot {margin-bottom:var(--space-3);}
   .day-card > .subtle:last-child {min-height:4.5em;margin-bottom:0;margin-top:var(--space-1);}
 }
+
+/* The day is the main landmark; meal labels stay quiet. */
+.day-card .day-heading {
+  background:var(--color-primary);color:var(--color-surface);
+  border-radius:var(--radius-small);padding:var(--space-3) var(--space-2);
+  margin-bottom:var(--space-2);line-height:1.35;
+}
+.day-weekday {display:block;font-size:1.05rem;font-weight:750;}
+.day-date {display:block;font-size:.8rem;font-weight:500;margin-top:var(--space-1);}
+.day-total {display:flex;align-items:center;gap:var(--space-1);min-height:44px;margin-bottom:var(--space-2);}
+.day-total > span {flex:1;min-width:0;}
+.day-goal-info {
+  flex-shrink:0;width:44px;min-height:44px;padding:0;border:0;
+  border-radius:var(--radius-pill);background:transparent;color:var(--color-muted);font-size:1.1rem;
+}
+.day-goal-info:hover {background:var(--color-soft);}
+.day-card .meal-slot > h3,.day-card .extra-slot > summary {
+  background:var(--color-soft);color:var(--color-muted);font-weight:600;
+}
+@media(max-width:767px) {
+  .day-weekday {font-size:1.3rem;}
+  .day-date {font-size:.9rem;}
+}
+
+/* Shared natural row heights are measured after rendering, without clipping. */
+.day-card-header progress {display:block;}

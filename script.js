@@ -287,6 +287,7 @@
     }
   }
   function render() {
+    weekRowObserver?.disconnect();weekRowObserver=null;
     document.documentElement.dataset.animations=state.settings.animationsEnabled?"on":"off";
     $("welcome").hidden=recovery||state.profile.completed;
     $("workspace").hidden=recovery||!state.profile.completed;
@@ -835,6 +836,29 @@
     const arrow=node("span",entries.length?"›":"+","drink-summary-arrow");arrow.setAttribute("aria-hidden","true");
     b.append(icon,text,arrow);return b;
   }
+  let weekRowObserver=null;
+  function alignWeekRows(grid) {
+    let scheduled=false,lastWidth=-1;
+    const selectors=[".day-card-header",...MAIN.map(meal=>'[data-meal-type="'+meal+'"]'),'[data-meal-type="snack"]'];
+    const align=()=>{
+      scheduled=false;
+      if(!grid.isConnected)return;
+      const rows=selectors.map(selector=>[...grid.querySelectorAll(".day-card > "+selector)]);
+      rows.flat().forEach(element=>element.style.minHeight="");
+      if(!matchMedia("(min-width:768px)").matches)return;
+      const heights=rows.map(elements=>Math.max(0,...elements.map(element=>element.getBoundingClientRect().height)));
+      rows.forEach((elements,index)=>elements.forEach(element=>element.style.minHeight=Math.ceil(heights[index])+"px"));
+    };
+    const schedule=()=>{if(!scheduled){scheduled=true;requestAnimationFrame(align);}};
+    weekRowObserver=new ResizeObserver(entries=>{
+      const width=entries[0].contentRect.width;
+      if(width!==lastWidth){lastWidth=width;schedule();}
+    });
+    weekRowObserver.observe(grid);
+    grid.addEventListener("toggle",schedule,true);
+    document.fonts.ready.then(schedule);
+    schedule();
+  }
   function renderWeek(parent) {
     const dates=dayDates(selectedWeek),tools=node("div",undefined,"button-row planner-tools");
     const methods=[
@@ -870,10 +894,24 @@
     const grid=node("div",undefined,"week-grid");
     dates.forEach(date=>{
       const day=state.days[date]||{date,goalKcal:goalFor(state,date),planEntries:[],actualEntries:[]},card=node("article",undefined,"card day-card");
-      card.dataset.date=date;if(date===selectedDay)card.classList.add("selected-day");card.append(node("h2",prettyDate(date,true)));
-      const total=dayTotal(day);card.append(node("p","План: "+format(total)+" ккал","day-total"),node("p","Цель: "+(day.goalKcal===null?"без цели":format(day.goalKcal)+" ккал"),"subtle"));
-      if(day.goalKcal!==null){const progress=node("progress");progress.max=day.goalKcal;progress.value=Math.min(total,day.goalKcal);progress.setAttribute("aria-label","План относительно цели");card.append(progress);if(total>day.goalKcal)card.append(node("p","Выше ориентира на "+format(total-day.goalKcal)+" ккал","subtle"));}
-      if(date<todayDate())card.append(node("p","Изменение плана не меняет съеденное.","subtle"));
+      card.dataset.date=date;if(date===selectedDay)card.classList.add("selected-day");
+      const header=node("header",undefined,"day-card-header");
+      const calendarDate=new Date(date+"T12:00:00"),heading=node("h2",undefined,"day-heading");
+      const weekday=calendarDate.toLocaleDateString("ru-RU",{weekday:"long"});
+      heading.append(node("span",weekday.charAt(0).toUpperCase()+weekday.slice(1),"day-weekday"),node("span",calendarDate.toLocaleDateString("ru-RU",{day:"numeric",month:"short"}),"day-date"));header.append(heading);
+      const total=dayTotal(day),totalRow=node("p",undefined,"day-total");
+      totalRow.append(node("span","План: "+format(total)+" ккал"));
+      if(day.goalKcal!==null&&total>day.goalKcal){
+        const info=actionButton("ⓘ",()=>{
+          const dialog=modal(prettyDate(date));
+          dialog.append(node("p","План: "+format(total)+" ккал"),node("p","Ориентир: "+format(day.goalKcal)+" ккал"),node("p","Выше ориентира на "+format(total-day.goalKcal)+" ккал"));
+        });
+        info.className="day-goal-info";info.setAttribute("aria-label","Пояснение к калориям за "+prettyDate(date));info.setAttribute("aria-haspopup","dialog");totalRow.append(info);
+      }
+      header.append(totalRow,node("p","Цель: "+(day.goalKcal===null?"без цели":format(day.goalKcal)+" ккал"),"subtle"));
+      if(day.goalKcal!==null){const progress=node("progress");progress.max=day.goalKcal;progress.value=Math.min(total,day.goalKcal);progress.setAttribute("aria-label","План относительно цели");header.append(progress);}
+      if(date<todayDate())header.append(node("p","Изменение плана не меняет съеденное.","subtle"));
+      card.append(header);
       for(const mealType of MAIN) {
         const section=node("section",undefined,"meal-slot");section.dataset.mealType=mealType;section.append(node("h3",MEALS[mealType]));
         const entry=day.planEntries.find(e=>e.mealType===mealType);section.append(entry?entryCard(entry,day):actionButton("Добавить",()=>openCatalog(date,mealType)));card.append(section);
@@ -889,7 +927,7 @@
       }
       card.append(drinksSummary(date,day));
       card.append(node("p","Фактическое питание: журнал появится на шаге 3.","subtle"));grid.append(card);
-    });parent.append(grid);
+    });parent.append(grid);alignWeekRows(grid);
   }
   function renderShopping(parent) {
     const p=shoppingPeriod(),tabs=node("div",undefined,"button-row");
