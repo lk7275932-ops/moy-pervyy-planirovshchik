@@ -145,9 +145,10 @@
     <div id="wizardStepTwo" hidden>
       <p class="form-intro">Ориентир помогает планировать. Он не обещает конкретный результат на весах.</p>
       <div class="form-grid">
-        <div class="field"><label for="goalMode">Как выбрать калорийную цель?</label><select id="goalMode" name="goalMode"><option value="calculated">Ориентировочный расчёт</option><option value="manual">Ввести свою цель</option><option value="none">Планировать без цели</option></select></div>
-        <div class="field"><label for="lossPreference">Пожелание по темпу</label><select id="lossPreference" name="lossPreference"><option value="0">Поддержание веса</option><option value="0.25">Снижение · 0,25 кг в неделю</option><option value="0.5">Снижение · 0,5 кг в неделю</option></select></div>
+        <div class="field"><label for="goalMode">Как выбрать калорийную цель?</label><select id="goalMode" name="goalMode" aria-describedby="calculationAvailability"><option value="calculated">Ориентировочный расчёт</option><option value="manual">Ввести свою цель</option><option value="none">Планировать без цели</option></select></div>
+        <div class="field"><label for="lossPreference">Пожелание по темпу</label><select id="lossPreference" name="lossPreference" aria-describedby="lossPreferenceHint"><option value="0">Поддержание веса</option><option value="0.25">Снижение · 0,25 кг в неделю</option><option value="0.5">Снижение · 0,5 кг в неделю</option></select><p id="lossPreferenceHint" class="subtle"></p></div>
       </div>
+      <div id="calculationAvailability" class="notice" aria-live="polite" hidden></div>
       <div id="manualGoalField" class="field" hidden><label for="dailyKcalGoal">Дневная цель, ккал</label><input id="dailyKcalGoal" name="dailyKcalGoal" type="text" inputmode="numeric" maxlength="4" aria-describedby="dailyKcalGoalError"><p class="field-error" id="dailyKcalGoalError"></p></div>
       <div id="goalPreview" class="goal-preview" aria-live="polite"></div>
       <label id="lowGoalWarning" class="check-line warning" hidden><input id="manualGoalConfirmed" name="manualGoalConfirmed" type="checkbox"><span>Цель ниже порога автоматического расчёта. Эта цель выбрана мной; подтверждаю свой выбор.</span></label>

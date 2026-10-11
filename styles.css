@@ -418,3 +418,4 @@ fieldset {min-width:0;border:1px solid var(--color-border);border-radius:var(--r
 
 .recipe-entry-fields .ingredient-add {width:44px;min-width:44px;height:48px;padding:0;margin-bottom:var(--space-3);font-size:1.25rem;}
 .recipe-entry-fields select {white-space:nowrap;text-overflow:ellipsis;overflow:hidden;}
+#profileDialog fieldset {padding:var(--space-3);}

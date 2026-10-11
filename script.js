@@ -330,16 +330,35 @@
     const {profile}=readPersonal();
     return {...profile,goalMode:$("goalMode").value,lossPreference:Number($("lossPreference").value)};
   }
+  function calculationHelp(p,calc) {
+    if(skipPersonal)return {text:"Ориентировочный расчёт недоступен: личные параметры пропущены. Заполните возраст, рост, текущий и желаемый вес, формулу и активность на первом шаге.",field:"age",fill:true};
+    const fields={age:"Возраст",heightCm:"Рост",baselineWeightKg:"Текущий вес",goalWeightKg:"Желаемый вес",activityFactor:"Уровень активности"};
+    const missing=Object.keys(fields).filter(key=>!Number.isFinite(p[key])||key==="activityFactor"&&!p[key]);
+    if(missing.length)return {text:"Для расчёта нужно заполнить: "+missing.map(key=>fields[key]).join(", ")+". Вернитесь к личным параметрам.",field:missing[0]};
+    if(!["female","male"].includes(p.formulaSex))return {text:"Ориентировочный расчёт недоступен: в поле «Пол для расчётной формулы» не выбрана женская или мужская формула. Проверьте выбор на первом шаге или используйте свою калорийную цель.",field:"formulaSex"};
+    if(p.pregnancyStatus!=="no")return {text:"Ориентировочный расчёт недоступен: для беременности или грудного вскармливания указано «Да» либо «Не знаю». Если это ошибка, исправьте ответ на первом шаге. Иначе используйте свою согласованную цель или планируйте без цели.",field:"pregnancyStatus"};
+    if(p.goalWeightKg>p.baselineWeightKg)return {text:"Желаемый вес выше текущего — такой режим автоматического расчёта здесь не поддерживается. Проверьте оба значения на первом шаге.",field:"goalWeightKg"};
+    if(p.goalWeightKg/((p.heightCm/100)**2)<18.5)return {text:"Указанный желаемый вес при этом росте выходит за ограничения автоматического расчёта. Проверьте поля «Желаемый вес» и «Рост» на первом шаге. Если значения верны, выберите свою согласованную калорийную цель или режим без цели.",field:"goalWeightKg"};
+    if(calc.tdee!==undefined)return {text:"При выбранном темпе рассчитанная калорийная цель ниже ограничения приложения. Выберите более спокойный темп или поддержание веса. Если расчёт всё равно недоступен, можно ввести свою согласованную цель или планировать без цели.",field:"lossPreference",tempo:true};
+    return {text:calc.reason+" Проверьте личные параметры на первом шаге или выберите свою цель либо режим без цели.",field:"age"};
+  }
   function updatePreview() {
     const p=currentDraft(),preview=$("goalPreview");
     preview.replaceChildren();$("manualGoalField").hidden=p.goalMode!=="manual";$("lowGoalWarning").hidden=true;
-    $("lossPreference").disabled=p.goalMode!=="calculated";
+    $("lossPreference").disabled=false;
     const same=p.baselineWeightKg!==null&&p.goalWeightKg===p.baselineWeightKg;
     [...$("lossPreference").options].forEach(option=>option.disabled=same&&option.value!=="0");
     if(same) $("lossPreference").value="0";
+    $("lossPreferenceHint").textContent=same?"Текущий и желаемый вес совпадают — выбрано поддержание веса.":p.goalMode==="calculated"?"Пожелание влияет на расчёт калорий. Темп снижения веса не гарантируется.":"Пожелание сохранится. На калории оно влияет только в режиме «Ориентировочный расчёт».";
     p.lossPreference=Number($("lossPreference").value);
     const calc=calorieGoal(p);
     $("goalMode").querySelector('option[value="calculated"]').disabled=!calc.ok;
+    const availability=$("calculationAvailability");availability.replaceChildren();availability.hidden=calc.ok;
+    if(!calc.ok){
+      const help=calculationHelp(p,calc);availability.append(node("p",help.text));
+      const action=node("button",help.tempo?"Изменить темп":help.fill?"Заполнить личные параметры":"Проверить личные параметры","button secondary small");action.type="button";
+      action.addEventListener("click",()=>{if(help.tempo){$("lossPreference").focus();return;}if(help.fill)setSkip(false);setWizardStep(1,false);$(help.field).focus();});availability.append(action);
+    }
     if(p.goalMode==="calculated") {
       if(calc.ok) {
         preview.append(node("span","Ориентир на день","stat-label"),node("strong",format(calc.goal)+" ккал","goal-number"));
