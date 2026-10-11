@@ -1426,60 +1426,125 @@
     });
   }
   function editRecipe(original=null) {
-    const isOwn=original?.id.startsWith("cr_"),recipe=original?clone(original):{name:"",mealTypes:["snack"],prepMinutes:10,sourceType:"homemade",ingredients:[],calorieMode:"ingredients",manualKcal:null,steps:[],note:"",suitableForAuto:false,opaquePackaged:false};
-    const dialog=modal(isOwn?"Изменить своё блюдо":"Создать своё блюдо",true),form=node("form");
-    const name=inputField(form,"Название блюда · до 80 символов","text",recipe.name);name.maxLength=80;
-    const types=node("fieldset"),legend=node("legend","Приёмы пищи");types.append(legend);const mealInputs={};
-    for(const key of [...MAIN,"snack"]){const label=checkField(MEALS[key],recipe.mealTypes.includes(key),()=>{});mealInputs[key]=label.querySelector("input");types.append(label);}form.append(types);
-    const minutes=inputField(form,"Готовка, минут · 0–240","decimal",recipe.prepMinutes);
-    const source=selectField(form,"Вид блюда",{homemade:"Домашнее",ready:"Готовое покупное"},recipe.sourceType);
-    const mode=selectField(form,"Источник калорий",{ingredients:"Рассчитать из ингредиентов",manual:"Указать вручную"},recipe.calorieMode);
-    const manual=inputField(form,"Калории на 1 порцию · 0–3000","decimal",recipe.manualKcal??"");
-    const ingredients=clone(recipe.ingredients),ingredientArea=node("section",undefined,"card ingredient-editor"),list=node("div");ingredientArea.append(node("h3","Ингредиенты на 1 порцию"),list);
-    let choices=()=>Object.fromEntries(allFood().filter(i=>!i.archived||ingredients.some(x=>x.ingredientId===i.id)).map(i=>[i.id,i.name+" · "+(i.unit==="g"?"г":i.unit==="ml"?"мл":"шт.")]));
-    const selected=selectField(ingredientArea,"Ингредиент",choices(),allFood().find(i=>!i.archived)?.id);
-    const quantity=inputField(ingredientArea,"Количество в единице выбранного продукта","decimal","");
-    const refresh=()=>{
-      list.replaceChildren();ingredients.forEach((i,n)=>{const row=node("div",undefined,"ingredient-line");row.append(node("span",foodById(i.ingredientId).name+" — "+format(i.quantity,3)+" "+foodById(i.ingredientId).unit),actionButton("Убрать",()=>{ingredients.splice(n,1);foodDirty=true;refresh();}));list.append(row);});
-      update();
-    };
-    ingredientArea.append(actionButton("Добавить ингредиент",()=>{
-      const q=parseNumber(quantity.value,.000001,100000,.000001);if(q.error||ingredients.length>=40||ingredients.some(i=>i.ingredientId===selected.value)){errorIn(ingredientArea,q.error||"До 40 разных ингредиентов. Этот продукт уже добавлен.");return;}
-      ingredients.push({ingredientId:selected.value,quantity:q.value});quantity.value="";foodDirty=true;refresh();
-    }));
-    const newArea=node("details",undefined,"new-ingredient");newArea.append(node("summary","Создать новый продукт"));
-    const newName=inputField(newArea,"Название продукта · до 60 символов","text","");newName.maxLength=60;
-    const group=selectField(newArea,"Отдел",Object.fromEntries([...new Set(FOOD.map(i=>i.group))].map(g=>[g,g])),"другое");
-    const unit=selectField(newArea,"Единица",{g:"Граммы",ml:"Миллилитры",pcs:"Штуки"},"g");
-    const rate=inputField(newArea,"Ккал на 100 г/мл или на 1 штуку · 0–1000","decimal","");
-    newArea.append(actionButton("Сохранить продукт",()=>{
-      const k=parseNumber(rate.value,0,1000,.000001);if(k.error||!newName.value.trim()){errorIn(newArea,k.error||"Укажите название продукта.");return;}
-      const ingredient={id:uid("ci_"),name:newName.value.trim(),group:group.value,unit:unit.value,kcalPer100:unit.value==="pcs"?null:k.value,kcalPerUnit:unit.value==="pcs"?k.value:null,archived:false};
-      const next=clone(state);next.customIngredients.push(ingredient);
-      if(commit(next)){selected.replaceChildren();Object.entries(choices()).forEach(([v,text])=>{const o=node("option",text);o.value=v;selected.append(o);});selected.value=ingredient.id;newArea.open=false;newName.value="";rate.value="";announce(storageError?"Продукт принят в память, но не сохранён.":"Продукт сохранён.");}
-    }));ingredientArea.append(newArea);form.append(ingredientArea);
-    const steps=textareaField(form,"Приготовление · 1–10 шагов, каждый с новой строки",recipe.steps.join("\n"),10010);
-    const note=textareaField(form,"Заметка · до 1000 символов",recipe.note||"",1000);
-    const autoLabel=checkField("Разрешить в автоматическом подборе",recipe.suitableForAuto,()=>{}),auto=autoLabel.querySelector("input");
-    const opaqueLabel=checkField("Непрозрачная упаковка: полный состав не перечислен",!!recipe.opaquePackaged,()=>{}),opaque=opaqueLabel.querySelector("input");form.append(opaqueLabel,node("p","Если продукт записан как готовое блюдо по упаковке, отметьте неизвестный состав. Для подбора нужен полный список ингредиентов.","subtle"),autoLabel);
-    const info=node("p",undefined,"notice");form.append(info);
-    function update(){
-      manual.parentElement.hidden=mode.value!=="manual";
-      const total=ingredients.reduce((n,i)=>{const f=foodById(i.ingredientId);return n+i.quantity*(f.unit==="pcs"?f.kcalPerUnit:f.kcalPer100/100);},0);
-      const value=mode.value==="manual"?parseNumber(manual.value,0,3000,.000001).value:total;
-      info.textContent=Number.isFinite(value)?"1 порция: "+format(value)+" ккал":"Введите калории.";
-      const eligibleForAuto=ingredients.length>0&&!opaque.checked&&parseNumber(minutes.value,0,240,1).value<=30&&value>0;
-      auto.disabled=!eligibleForAuto;if(auto.disabled)auto.checked=false;
+    const isOwn=original?.id.startsWith("cr_"),recipe=original?clone(original):{name:"",mealTypes:[],prepMinutes:10,sourceType:"homemade",ingredients:[],calorieMode:"ingredients",manualKcal:null,steps:[],note:"",suitableForAuto:false,opaquePackaged:false};
+    const dialog=modal(isOwn?"Изменить своё блюдо":"Создать своё блюдо",true),form=node("form");form.noValidate=true;dialog.classList.add("recipe-wizard");
+    const progress=node("p",undefined,"recipe-step-title");progress.setAttribute("aria-live","polite");dialog.append(progress);
+    const track=node("div",undefined,"wizard-track");track.setAttribute("aria-hidden","true");for(let i=0;i<3;i++)track.append(node("span"));dialog.append(track);
+    const body=node("div",undefined,"recipe-wizard-body"),error=node("p",undefined,"notice notice-error food-error");error.hidden=true;error.setAttribute("role","alert");body.append(error);
+    const pages=[0,1,2].map(()=>node("section",undefined,"recipe-step"));pages.forEach(p=>body.append(p));form.append(body);dialog.append(form);
+    const name=inputField(pages[0],"Название блюда · до 80 символов","text",recipe.name);name.maxLength=80;
+    const types=node("fieldset",undefined,"meal-type-options recipe-meals"),legend=node("legend","Приёмы пищи");types.append(legend);const mealInputs={};
+    types.append(node("p","Выберите один или несколько","subtle"));const chips=node("div",undefined,"recipe-meal-chips");
+    for(const key of [...MAIN,"snack"]){const label=checkField(MEALS[key],recipe.mealTypes.includes(key),()=>{});mealInputs[key]=label.querySelector("input");chips.append(label);}types.append(chips);pages[0].append(types);
+    const basics=node("div",undefined,"recipe-basics");pages[0].append(basics);
+    const minutes=inputField(basics,"Готовка, минут · 0–240","decimal",recipe.prepMinutes);
+    const source=selectField(basics,"Вид блюда",{homemade:"Домашнее",ready:"Готовое покупное"},recipe.sourceType);
+    const mode=selectField(pages[1],"Источник калорий",{ingredients:"Рассчитать по ингредиентам",manual:"Указать калории"},recipe.calorieMode);
+    const manual=inputField(pages[1],"Калории на 1 порцию · 0–3000","decimal",recipe.manualKcal??"");
+    const ingredients=clone(recipe.ingredients),ingredientArea=node("section",undefined,"recipe-ingredients"),list=node("div",undefined,"recipe-ingredient-list");
+    const composition=checkField("Добавить состав для списка покупок",ingredients.length>0,()=>{update();}),compositionInput=composition.querySelector("input");pages[1].append(composition,ingredientArea);
+    ingredientArea.append(node("h3","Ингредиенты на 1 порцию"),list);
+    const choices=()=>({"":"Выберите…",...Object.fromEntries(allFood().filter(i=>!i.archived||ingredients.some(x=>x.ingredientId===i.id)).map(i=>[i.id,i.name+" · "+(i.unit==="g"?"г":i.unit==="ml"?"мл":"шт.")]))});
+    const entryFields=node("div",undefined,"recipe-entry-fields");ingredientArea.append(entryFields);
+    const selected=selectField(entryFields,"Ингредиент",choices(),"");
+    const quantity=inputField(entryFields,"Количество","decimal","");
+    function updateQuantityUnit(){const food=foodById(selected.value);quantity.parentElement.querySelector("label").textContent="Количество"+(food?", "+(food.unit==="g"?"г":food.unit==="ml"?"мл":"шт."):"");}
+    selected.addEventListener("change",updateQuantityUnit);
+    const ingredientActions=node("div",undefined,"button-row");ingredientArea.append(ingredientActions);
+    function refresh(){
+      list.replaceChildren();ingredients.forEach((i,n)=>{
+        const food=foodById(i.ingredientId),row=node("div",undefined,"ingredient-line");
+        const remove=actionButton("×",()=>{ingredients.splice(n,1);foodDirty=true;refresh();});remove.setAttribute("aria-label","Убрать "+food.name);remove.classList.add("ingredient-remove");
+        row.append(node("span",food.name+" — "+format(i.quantity,3)+" "+(food.unit==="g"?"г":food.unit==="ml"?"мл":"шт.")),remove);list.append(row);
+      });update();
     }
-    form.addEventListener("input",update);refresh();
-    const save=node("button","Сохранить блюдо","button primary");save.type="submit";form.append(save);dialog.append(form);
+    ingredientActions.append(actionButton("Добавить ингредиент",()=>{
+      const q=parseNumber(quantity.value,.000001,100000,.000001);
+      if(!selected.value||q.error||ingredients.length>=40||ingredients.some(i=>i.ingredientId===selected.value)){showError(1,!selected.value?"Выберите ингредиент.":q.error||"До 40 разных ингредиентов. Этот продукт уже добавлен.",!selected.value?selected:quantity);return;}
+      ingredients.push({ingredientId:selected.value,quantity:q.value});quantity.value="";selected.value="";updateQuantityUnit();error.hidden=true;foodDirty=true;refresh();
+    }));
+    const createProduct=actionButton("Новый продукт",openNewProduct);ingredientActions.append(createProduct);
+    function openNewProduct(){
+      const child=node("dialog",undefined,"recipe-product-dialog"),heading=node("div",undefined,"dialog-heading"),title=node("h2","Новый продукт");title.id=uid("title_");child.setAttribute("aria-labelledby",title.id);
+      let dirty=false;
+      function finish(){child.close();child.remove();createProduct.focus({preventScroll:true});}
+      function cancel(){
+        if(!dirty){finish();return;}
+        if(child.querySelector(".discard-prompt"))return;
+        const prompt=node("div",undefined,"notice discard-prompt");prompt.append(node("p","Закрыть без сохранения нового продукта?"),actionButton("Продолжить редактирование",()=>{prompt.remove();newName.focus();}),actionButton("Не сохранять",finish));child.append(prompt);prompt.querySelector("button").focus();
+      }
+      const close=actionButton("×",cancel);close.className="icon-button";close.setAttribute("aria-label","Закрыть новый продукт");heading.append(title,close);child.append(heading);
+      const productForm=node("form");productForm.noValidate=true;child.append(productForm);
+      const newName=inputField(productForm,"Название продукта · до 60 символов","text","");newName.maxLength=60;
+      const group=selectField(productForm,"Отдел",Object.fromEntries([...new Set(FOOD.map(i=>i.group))].map(g=>[g,g])),"другое");
+      const unit=selectField(productForm,"Единица",{g:"Граммы",ml:"Миллилитры",pcs:"Штуки"},"g");
+      const rate=inputField(productForm,"Ккал на 100 г/мл или на 1 штуку · 0–1000","decimal","");
+      const actions=node("div",undefined,"button-row"),save=node("button","Сохранить продукт","button primary");save.type="submit";actions.append(save,actionButton("Отмена",cancel));productForm.append(actions);
+      productForm.addEventListener("input",()=>dirty=true);productForm.addEventListener("change",()=>dirty=true);
+      child.addEventListener("cancel",event=>{event.preventDefault();cancel();});
+      productForm.addEventListener("submit",event=>{
+        event.preventDefault();const k=parseNumber(rate.value,0,1000,.000001);
+        if(k.error||!newName.value.trim()){errorIn(productForm,k.error||"Укажите название продукта.");(!newName.value.trim()?newName:rate).focus();return;}
+        const ingredient={id:uid("ci_"),name:newName.value.trim(),group:group.value,unit:unit.value,kcalPer100:unit.value==="pcs"?null:k.value,kcalPerUnit:unit.value==="pcs"?k.value:null,archived:false};
+        const next=clone(state);next.customIngredients.push(ingredient);
+        if(commit(next)){
+          selected.replaceChildren();Object.entries(choices()).forEach(([value,text])=>{const option=node("option",text);option.value=value;selected.append(option);});selected.value=ingredient.id;updateQuantityUnit();
+          finish();quantity.focus();announce(storageError?"Продукт принят в память, но не сохранён.":"Продукт сохранён. Укажите количество для блюда.");
+        }
+      });
+      document.body.append(child);child.showModal();newName.focus();
+    }
+    const steps=textareaField(pages[2],"Приготовление · 1–10 шагов, каждый с новой строки",recipe.steps.join("\n"),10010);steps.rows=3;
+    const noteArea=node("details",undefined,"recipe-note");noteArea.append(node("summary","Заметка · необязательно"));pages[2].append(noteArea);
+    const note=textareaField(noteArea,"Заметка · до 1000 символов",recipe.note||"",1000);note.rows=2;noteArea.open=!!recipe.note;
+    const autoLabel=checkField("Разрешить в автоматическом подборе",recipe.suitableForAuto,()=>{}),auto=autoLabel.querySelector("input");
+    const opaqueLabel=checkField("Полный состав по упаковке неизвестен",!!recipe.opaquePackaged,()=>{}),opaque=opaqueLabel.querySelector("input");pages[2].append(opaqueLabel,autoLabel,node("p","Для автоматического подбора нужен полный состав и готовка до 30 минут.","subtle"));
+    const info=node("p",undefined,"notice recipe-calories");pages[1].append(info);
+    function update(){
+      const isManual=mode.value==="manual";manual.parentElement.hidden=!isManual;composition.hidden=!isManual;
+      ingredientArea.hidden=isManual&&!compositionInput.checked&&!ingredients.length;
+      if(isManual&&ingredients.length)compositionInput.checked=true;
+      const total=ingredients.reduce((n,i)=>{const food=foodById(i.ingredientId);return n+i.quantity*(food.unit==="pcs"?food.kcalPerUnit:food.kcalPer100/100);},0);
+      const value=isManual?parseNumber(manual.value,0,3000,.000001).value:total;
+      info.textContent=Number.isFinite(value)?"1 порция: "+format(value)+" ккал":"Введите калории на порцию.";
+      if(isManual&&!ingredients.length)info.textContent+=" Без состава продукты для этого блюда не попадут в покупки.";
+      auto.disabled=!(ingredients.length>0&&!opaque.checked&&parseNumber(minutes.value,0,240,1).value<=30&&value>0);if(auto.disabled)auto.checked=false;
+    }
+    let step=0;
+    const footer=node("div",undefined,"recipe-wizard-actions"),back=actionButton("Назад",()=>setStep(step-1)),next=actionButton("Далее",()=>advance(),false),save=node("button","Сохранить блюдо","button primary");save.type="submit";footer.append(back,next,save);form.append(footer);
+    const titles=["О блюде","Состав и калории","Рецепт и сохранение"];
+    function setStep(value){
+      step=value;pages.forEach((page,i)=>page.hidden=i!==step);[...track.children].forEach((part,i)=>part.classList.toggle("active",i<=step));
+      progress.textContent="Шаг "+(step+1)+" из 3 · "+titles[step];back.hidden=step===0;next.hidden=step===2;save.hidden=step!==2;error.hidden=true;body.scrollTop=0;
+      pages[step].querySelector("input:not(:disabled),select:not(:disabled),textarea")?.focus({preventScroll:true});
+    }
+    function showError(index,message,field){setStep(index);error.textContent=message;error.hidden=false;field?.focus({preventScroll:true});body.scrollTop=0;}
+    function validateStep(index){
+      if(index===0){
+        if(!name.value.trim()){showError(0,"Укажите название блюда.",name);return false;}
+        if(!Object.values(mealInputs).some(input=>input.checked)){showError(0,"Выберите хотя бы один приём пищи.",Object.values(mealInputs)[0]);return false;}
+        const min=parseNumber(minutes.value,0,240,1);if(min.error){showError(0,min.error,minutes);return false;}
+      }
+      if(index===1){
+        if(quantity.value.trim()&&!ingredientArea.hidden){showError(1,"Нажмите «Добавить ингредиент» или очистите количество.",quantity);return false;}
+        if(mode.value==="manual"){const k=parseNumber(manual.value,0,3000,.000001);if(k.error){showError(1,k.error,manual);return false;}}
+        else if(!ingredients.length){showError(1,"Добавьте ингредиенты или выберите «Указать калории».",selected);return false;}
+      }
+      if(index===2){
+        const values=steps.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+        if(!values.length||values.length>10||values.some(s=>s.length>1000)){showError(2,"Укажите от 1 до 10 шагов приготовления, до 1000 символов в каждом.",steps);return false;}
+      }
+      return true;
+    }
+    function advance(){if(validateStep(step))setStep(step+1);}
+    form.addEventListener("input",update);form.addEventListener("change",update);refresh();setStep(0);
     form.addEventListener("submit",event=>{
-      event.preventDefault();const min=parseNumber(minutes.value,0,240,1),k=mode.value==="manual"?parseNumber(manual.value,0,3000,.000001):{value:null};
-      const nextRecipe={id:isOwn?recipe.id:uid("cr_"),name:name.value.trim(),mealTypes:Object.keys(mealInputs).filter(k=>mealInputs[k].checked),prepMinutes:min.value,sourceType:source.value,ingredients:clone(ingredients),calorieMode:mode.value,manualKcal:k.value,steps:steps.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean),note:note.value.trim(),suitableForAuto:auto.checked,opaquePackaged:opaque.checked};
-      if(min.error||k.error){errorIn(form,min.error||k.error);return;}
-      const next=clone(state);next.customRecipes=next.customRecipes.filter(r=>r.id!==nextRecipe.id);next.customRecipes.push(nextRecipe);
-      const errors=validateState(next);if(errors.length){errorIn(form,errors[0]);return;}
-      if(commit(next)){closeFood(true);announce(storageError?"Рецепт принят в память, но не сохранён.":"Рецепт сохранён. Записи меню и съеденного не изменились.");}
+      event.preventDefault();if(step<2){advance();return;}
+      for(let i=0;i<3;i++)if(!validateStep(i))return;
+      const nextRecipe={id:isOwn?recipe.id:uid("cr_"),name:name.value.trim(),mealTypes:Object.keys(mealInputs).filter(k=>mealInputs[k].checked),prepMinutes:parseNumber(minutes.value,0,240,1).value,sourceType:source.value,ingredients:clone(ingredients),calorieMode:mode.value,manualKcal:mode.value==="manual"?parseNumber(manual.value,0,3000,.000001).value:null,steps:steps.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean),note:note.value.trim(),suitableForAuto:auto.checked,opaquePackaged:opaque.checked};
+      const nextState=clone(state);nextState.customRecipes=nextState.customRecipes.filter(r=>r.id!==nextRecipe.id);nextState.customRecipes.push(nextRecipe);
+      const errors=validateState(nextState);if(errors.length){showError(2,errors[0]);return;}
+      if(commit(nextState)){closeFood(true);announce(storageError?"Рецепт принят в память, но не сохранён.":"Рецепт сохранён. Записи меню и съеденного не изменились.");}
     });
   }
   function manageIngredients() {
