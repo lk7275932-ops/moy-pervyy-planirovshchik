@@ -602,7 +602,7 @@
         const row=node("div",undefined,"button-row");
         row.append(actionButton("Рецепт",()=>showRecipe(snap)),actionButton(state.settings.favoriteRecipeIds.includes(r.id)?"★ В избранном":"☆ Избранное",()=>{toggleFavorite(r.id);refresh();}));
         const add=actionButton(context?"Выбрать":"В план",()=>choosePortion(r,context),false);add.disabled=blocked.length>0;row.append(add);
-        if(!context){row.append(actionButton(r.id.startsWith("cr_")?"Изменить":"Изменить копию",()=>editRecipe(r)));if(r.id.startsWith("cr_"))row.append(actionButton("Удалить",()=>deleteRecipe(r)));}
+        if(!context){row.append(actionButton(r.id.startsWith("cr_")?"Изменить":"Создать свой вариант",()=>editRecipe(r)));if(r.id.startsWith("cr_"))row.append(actionButton("Удалить",()=>deleteRecipe(r)));}
         if(snap.incompleteIngredients||snap.opaquePackaged)card.append(node("p",snap.opaquePackaged?"Состав и ограничения проверь по упаковке":"Состав не указан","warning"));if(r.note)card.append(node("p",r.note,"subtle"));card.append(row);list.append(card);
       });
     }
