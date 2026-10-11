@@ -203,10 +203,12 @@
   }
   function render() {
     weekRowObserver?.disconnect();weekRowObserver=null;
+    weightChartObserver?.disconnect();weightChartObserver=null;
     document.documentElement.dataset.animations=state.settings.animationsEnabled?"on":"off";
     $("welcome").hidden=recovery||state.profile.completed&&!showStart;
     $("workspace").hidden=recovery||!state.profile.completed||showStart;
     $("continuePlanning").hidden=!state.profile.completed;
+    $("completeProfile").hidden=state.profile.completed;
     const startProfile=$("welcome").querySelector("[data-action=open-profile]");
     startProfile.hidden=false;
     startProfile.parentElement.classList.toggle("with-planner",state.profile.completed);
@@ -1322,12 +1324,52 @@
       }catch(error){errorIn(form,error.message);}
     });
   }
-  let weightPeriod="all";
-  function weightPoints(records) {
-    const sorted=[...records].sort((a,b)=>a.date.localeCompare(b.date));if(!sorted.length)return {points:[],min:0,max:0};
-    const values=sorted.map(r=>r.weightKg),low=Math.min(...values),high=Math.max(...values),pad=Math.max(1,(high-low)*.1),min=low-pad,max=high+pad;
+  let weightPeriod="all",weightChartObserver=null;
+  function weightPoints(records,goal=null,width=360,height=240) {
+    const plot={left:44,right:width-18,top:32,bottom:height-40,width,height};
+    const sorted=[...records].sort((a,b)=>a.date.localeCompare(b.date));if(!sorted.length)return {points:[],min:0,max:0,plot};
+    const values=sorted.map(r=>r.weightKg);if(goal!==null)values.push(goal);
+    const low=Math.min(...values),high=Math.max(...values),pad=Math.max(.5,(high-low)*.15),min=low-pad,max=high+pad;
     const calendar=d=>{const [y,m,day]=d.split("-").map(Number);return Date.UTC(y,m-1,day);},first=calendar(sorted[0].date),last=calendar(sorted.at(-1).date);
-    return {min,max,points:sorted.map(r=>({...r,x:first===last?174:44+(calendar(r.date)-first)/(last-first)*260,y:144-(r.weightKg-min)/(max-min)*128}))};
+    const y=value=>plot.bottom-(value-min)/(max-min)*(plot.bottom-plot.top);
+    return {min,max,plot,goalY:goal===null?null:y(goal),points:sorted.map(r=>({...r,x:first===last?(plot.left+plot.right)/2:plot.left+(calendar(r.date)-first)/(last-first)*(plot.right-plot.left),y:y(r.weightKg)}))};
+  }
+  function drawWeightChart(chart,goal) {
+    const {plot,points,min,max}=chart,svg=svgNode("svg",{viewBox:"0 0 "+plot.width+" "+plot.height,role:"img","aria-label":"Изменения веса. Точные значения в таблице ниже."});
+    const short=date=>{const [y,m,d]=date.split("-").map(Number);return new Date(y,m-1,d,12).toLocaleDateString("ru-RU",{day:"numeric",month:"short"});};
+    for(let i=0;i<4;i++){
+      const value=min+(max-min)*i/3,y=plot.bottom-(plot.bottom-plot.top)*i/3;
+      svg.append(svgNode("line",{x1:plot.left,x2:plot.right,y1:y,y2:y,class:"weight-grid"}),svgNode("text",{x:plot.left-8,y:y+4,"text-anchor":"end",class:"weight-axis"},format(value,1)));
+    }
+    const coords=points.map(p=>p.x+","+p.y).join(" ");
+    if(points.length>1)svg.append(svgNode("polygon",{points:points[0].x+","+plot.bottom+" "+coords+" "+points.at(-1).x+","+plot.bottom,class:"weight-area"}));
+    if(goal!==null){
+      svg.append(svgNode("line",{x1:plot.left,x2:plot.right,y1:chart.goalY,y2:chart.goalY,class:"weight-goal"}),svgNode("text",{x:plot.left+6,y:chart.goalY-8,class:"weight-goal-label"},"Цель · "+format(goal,1)+" кг"));
+    }
+    svg.append(svgNode("polyline",{points:coords,class:"weight-line"}));
+    points.forEach((p,i)=>{const circle=svgNode("circle",{cx:p.x,cy:p.y,r:i===points.length-1?5:3.5,class:i===points.length-1?"weight-point weight-point-last":"weight-point"});circle.append(svgNode("title",{},short(p.date)+" · "+format(p.weightKg,1)+" кг"));svg.append(circle);});
+    const occupied=goal===null?[]:[{x:plot.left+6,y:chart.goalY-21,w:110,h:18}];
+    const candidates=[points.at(-1),...(points.length>1?[points[0]]:[]),...points.slice(1,-1)];
+    let labels=0;const limit=Math.max(3,Math.floor((plot.right-plot.left)/70));
+    for(const p of candidates){
+      if(labels>=limit)break;
+      const text=format(p.weightKg,1)+" кг",w=text.length*7.5;
+      const x=Math.max(plot.left+w/2,Math.min(plot.right-w/2,p.x));
+      for(const y of [p.y-14,p.y+24]){
+        const box={x:x-w/2,y:y-13,w,h:18};
+        if(box.y<5||box.y+box.h>plot.bottom+8||occupied.some(b=>box.x<b.x+b.w+6&&box.x+box.w+6>b.x&&box.y<b.y+b.h+3&&box.y+box.h+3>b.y))continue;
+        svg.append(svgNode("text",{x,y,"text-anchor":"middle",class:"weight-value"},text));occupied.push(box);labels++;break;
+      }
+    }
+    const dates=[];
+    for(const p of candidates){
+      const text=short(p.date),w=text.length*7;
+      const x=Math.max(plot.left+w/2,Math.min(plot.right-w/2,p.x));
+      if(dates.some(b=>Math.abs(b.x-x)<(b.w+w)/2+12))continue;
+      svg.append(svgNode("text",{x,y:plot.bottom+28,"text-anchor":"middle",class:"weight-date"},text));dates.push({x,w});
+      if(dates.length>=Math.max(2,Math.floor((plot.right-plot.left)/90)))break;
+    }
+    return svg;
   }
   function svgNode(tag,attrs={},text) {
     const el=document.createElementNS("http://www.w3.org/2000/svg",tag);Object.entries(attrs).forEach(([k,v])=>el.setAttribute(k,String(v)));if(text!==undefined)el.textContent=text;return el;
@@ -1341,25 +1383,25 @@
     const tabs=node("div",undefined,"button-row weight-tabs");for(const [v,label]of [["30","30 дней"],["90","90 дней"],["all","Всё"]]){
       const b=actionButton(label,()=>{weightPeriod=v;render();},weightPeriod!==v);b.setAttribute("aria-pressed",String(weightPeriod===v));tabs.append(b);
     }parent.append(tabs);
-    const records=sorted.filter(r=>weightPeriod==="all"||r.date>=addCalendarDays(todayDate(),1-Number(weightPeriod))),chart=weightPoints(records),panel=node("section",undefined,"card weight-chart");
+    const records=sorted.filter(r=>weightPeriod==="all"||r.date>=addCalendarDays(todayDate(),1-Number(weightPeriod))),chart=weightPoints(records,state.profile.goalWeightKg,Math.max(280,Math.min(800,parent.clientWidth-40))),panel=node("section",undefined,"card weight-chart");
     if(records.length){
-      const svg=svgNode("svg",{viewBox:"0 0 320 180",role:"img","aria-label":"Изменения веса. Точные значения в таблице ниже."});
-      svg.append(svgNode("polyline",{points:chart.points.map(p=>p.x+","+p.y).join(" "),fill:"none",stroke:"var(--color-primary)","stroke-width":2}));
-      chart.points.forEach(p=>svg.append(svgNode("circle",{cx:p.x,cy:p.y,r:3,fill:"var(--color-primary)"})));
-      svg.append(svgNode("text",{x:3,y:20},format(chart.max,1)),svgNode("text",{x:3,y:146},format(chart.min,1)));
-      const short=d=>d.slice(8,10)+"."+d.slice(5,7)+"."+d.slice(0,4);
-      svg.append(svgNode("text",{x:44,y:172,"text-anchor":"start"},short(records[0].date)));
-      if(records.length>1)svg.append(svgNode("text",{x:304,y:172,"text-anchor":"end"},short(records.at(-1).date)));
       const goal=state.profile.goalWeightKg;
-      if(goal!==null){
-        if(goal>=chart.min&&goal<=chart.max){const y=144-(goal-chart.min)/(chart.max-chart.min)*128;svg.append(svgNode("line",{x1:44,x2:304,y1:y,y2:y,stroke:"var(--color-muted)","stroke-dasharray":"4 4"}));}
-        panel.append(node("p","Цель: "+format(goal,1)+" кг · пунктир, если попадает в диапазон","subtle"));
-      }
-      panel.append(svg);if(records.length===1)panel.append(node("p","Добавь ещё измерение для сравнения."));
+      if(goal!==null)panel.append(node("p","Желаемый вес — "+format(goal,1)+" кг","subtle"));
+      panel.append(drawWeightChart(chart,goal));
+      if(records.length===1)panel.append(node("p","Добавь ещё измерение для сравнения."));
     }else panel.append(node("p","За этот период измерений нет."));
     const table=node("table",undefined,"weight-table"),caption=node("caption","Измерения веса"),thead=node("thead"),header=node("tr");["Дата","Вес, кг","Действия"].forEach(t=>header.append(node("th",t)));thead.append(header);table.append(caption,thead);
     const tbody=node("tbody");[...records].reverse().forEach(r=>{const row=node("tr"),date=node("td",r.date),weight=node("td",format(r.weightKg,1)),actions=node("td");actions.append(actionButton("Изменить",()=>editWeight(r)),actionButton("Удалить",()=>confirmAction("Удалить измерение?",prettyDate(r.date),()=>{const next=clone(state);next.weightLog=next.weightLog.filter(w=>w.id!==r.id);commit(next);})));row.append(date,weight,actions);tbody.append(row);});
     table.append(tbody);panel.append(table);parent.append(panel);
+    if(records.length){
+      let chartWidth=chart.plot.width;
+      weightChartObserver=new ResizeObserver(()=>{
+        const css=getComputedStyle(panel),width=Math.max(280,Math.min(800,panel.clientWidth-parseFloat(css.paddingLeft)-parseFloat(css.paddingRight)));
+        if(Math.abs(width-chartWidth)<1)return;chartWidth=width;
+        panel.querySelector("svg")?.replaceWith(drawWeightChart(weightPoints(records,state.profile.goalWeightKg,width),state.profile.goalWeightKg));
+      });
+      weightChartObserver.observe(panel);
+    }
   }
   function editWeight(existing=null) {
     const dialog=modal(existing?"Изменить вес":"Добавить вес",true),form=node("form"),date=inputField(form,"Дата измерения","date",existing?.date||todayDate());date.max=todayDate();
@@ -1522,7 +1564,7 @@
     if(bytes>=3.5*1024*1024)copies.append(node("p","Данных много — сохраните копию и посмотрите очистку архива.","warning"));grid.append(copies);parent.append(grid);
   }
   function renderTip(parent) {
-    if(!state.settings.tipsEnabled||storageError||conflict)return;
+    if(!state.settings.tipsEnabled||storageError||conflict||activeTab==="weight")return;
     const tomorrow=addCalendarDays(todayDate(),1),day=state.days[tomorrow],full=dayDates(selectedWeek).every(d=>MAIN.every(m=>state.days[d]?.planEntries.some(e=>e.mealType===m)));
     let text="План можно менять — он не начальник",handler=null,label=null;
     if(!day?.planEntries.some(e=>MAIN.includes(e.mealType))){
@@ -1530,7 +1572,7 @@
     }else if(aggregateShopping(state,tomorrow,tomorrow).length||unclearShopping(state,tomorrow,tomorrow).length){
       text="Меню на завтра готово — проверь покупки";label="Покупки на завтра";handler=()=>{shoppingScope="tomorrow";activeTab="shopping";render();};
     }else if(full)text="Ужин уже придуман. Одно расследование отменяется";
-    const tip=node("aside",undefined,"notice notice-tip");tip.append(node("p",text));if(handler)tip.append(actionButton(label,handler));parent.append(tip);
+    const tip=node("aside",undefined,"notice notice-tip");tip.append(node("p",text));if(handler&&!(activeTab==="shopping"&&shoppingScope==="tomorrow"&&label==="Покупки на завтра"))tip.append(actionButton(label,handler));parent.append(tip);
   }
   function unclearShopping(s,start,end) {
     const items=new Map();

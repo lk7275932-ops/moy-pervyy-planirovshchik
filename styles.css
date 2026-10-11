@@ -356,7 +356,7 @@ dialog .dialog-actions {flex-wrap:wrap;position:sticky;bottom:0;background:var(-
 .new-ingredient summary {min-height:44px;cursor:pointer;color:var(--color-primary);font-weight:600;}
 fieldset {min-width:0;border:1px solid var(--color-border);border-radius:var(--radius-small);margin-bottom:var(--space-3);}
 .weight-tabs {margin:var(--space-4) 0;}
-.weight-chart svg {display:block;width:100%;max-width:700px;margin:auto;}
+.weight-chart svg {display:block;width:100%;max-width:800px;margin:auto;}
 .weight-chart svg text {font-size:11px;fill:var(--color-muted);}
 .weight-table {width:100%;border-collapse:collapse;table-layout:fixed;}
 .weight-table th,.weight-table td {text-align:left;vertical-align:top;padding:var(--space-2) var(--space-1);border-bottom:1px solid var(--color-border);overflow-wrap:anywhere;}
@@ -374,3 +374,12 @@ fieldset {min-width:0;border:1px solid var(--color-border);border-radius:var(--r
 .start-actions>.button {width:100%;min-height:64px;height:100%;text-align:center;}
 .start-actions>[data-action="import"] {grid-column:1;}
 .start-skip {margin-top:var(--space-3);}
+.weight-chart svg .weight-grid {stroke:var(--color-border);stroke-width:1;opacity:.65;}
+.weight-chart svg .weight-area {fill:var(--color-primary);opacity:.08;}
+.weight-chart svg .weight-line {fill:none;stroke:var(--color-primary);stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+.weight-chart svg .weight-point {fill:var(--color-primary);stroke:var(--color-surface);stroke-width:1.5;}
+.weight-chart svg .weight-point-last {stroke-width:2;}
+.weight-chart svg .weight-goal {stroke:var(--color-muted);stroke-width:1.2;stroke-dasharray:5 5;}
+.weight-chart svg .weight-value {font-size:13px;font-weight:650;fill:var(--color-primary);paint-order:stroke;stroke:var(--color-surface);stroke-width:4;stroke-linejoin:round;}
+.weight-chart svg .weight-date,.weight-chart svg .weight-goal-label {font-size:12px;}
+.weight-chart svg .weight-goal-label {paint-order:stroke;stroke:var(--color-surface);stroke-width:4;stroke-linejoin:round;}
