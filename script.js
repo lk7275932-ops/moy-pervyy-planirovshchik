@@ -208,7 +208,10 @@
     $("workspace").hidden=recovery||!state.profile.completed||showStart;
     $("continuePlanning").hidden=!state.profile.completed;
     const startProfile=$("welcome").querySelector("[data-action=open-profile]");
-    startProfile.hidden=state.profile.completed;
+    startProfile.hidden=false;
+    startProfile.parentElement.classList.toggle("with-planner",state.profile.completed);
+    startProfile.classList.toggle("primary",!state.profile.completed);
+    startProfile.classList.toggle("secondary",state.profile.completed);
     $("welcome").querySelector("[data-action=skip-profile]").hidden=state.profile.completed;
     $("recovery").hidden=!recovery;
     document.querySelectorAll("[data-tab]").forEach(el=>{
