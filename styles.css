@@ -342,3 +342,4 @@ dialog .dialog-actions {flex-wrap:wrap;position:sticky;bottom:0;background:var(-
 
 /* Shared natural row heights are measured after rendering, without clipping. */
 .day-card-header progress {display:block;}
+.home-return {margin-bottom:var(--space-3);}

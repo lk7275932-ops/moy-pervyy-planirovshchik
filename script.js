@@ -147,7 +147,7 @@
   // Pure functions are reusable in subsequent steps and can be tested without UI state.
   window.MenuWithoutDrama = Object.freeze({parseNumber,calorieGoal,validateProfile,validateState,createEmptyState,todayDate,addCalendarDays,mondayOf});
   let state=createEmptyState(),lastSavedRaw=null,originalRaw=null,recovery=false,storageError=null,conflict=false,unsaved=false;
-  let activeTab="week",wizardStep=1,skipPersonal=false,baselineForm="",returnFocus=null,dialogScroll=0,discardFocus=null;
+  let showStart=false,activeTab="week",wizardStep=1,skipPersonal=false,baselineForm="",returnFocus=null,dialogScroll=0,discardFocus=null;
   function node(tag,text,className) {
     const el=document.createElement(tag);
     if(text!==undefined) el.textContent=text;
@@ -289,18 +289,22 @@
   function render() {
     weekRowObserver?.disconnect();weekRowObserver=null;
     document.documentElement.dataset.animations=state.settings.animationsEnabled?"on":"off";
-    $("welcome").hidden=recovery||state.profile.completed;
-    $("workspace").hidden=recovery||!state.profile.completed;
+    $("welcome").hidden=recovery||state.profile.completed&&!showStart;
+    $("workspace").hidden=recovery||!state.profile.completed||showStart;
+    $("continuePlanning").hidden=!state.profile.completed;
+    const startProfile=$("welcome").querySelector("[data-action=open-profile]");
+    startProfile.hidden=state.profile.completed;
+    $("welcome").querySelector("[data-action=skip-profile]").hidden=state.profile.completed;
     $("recovery").hidden=!recovery;
     document.querySelectorAll("[data-tab]").forEach(el=>{
       el.disabled=recovery||!state.profile.completed;
-      if(el.dataset.tab===activeTab) el.setAttribute("aria-current","page");else el.removeAttribute("aria-current");
+      if(el.dataset.tab===activeTab&&!showStart) el.setAttribute("aria-current","page");else el.removeAttribute("aria-current");
     });
     const monday=selectedWeek,sunday=addCalendarDays(monday,6);
     const dateLabel=(date)=>{const [y,m,d]=date.split("-").map(Number);return new Date(y,m-1,d,12).toLocaleDateString("ru-RU",{day:"numeric",month:"long"});};
     $("weekLabel").textContent=dateLabel(monday)+" — "+dateLabel(sunday);
     renderStorage();
-    if(state.profile.completed&&!recovery) renderPanel();
+    if(state.profile.completed&&!recovery&&!showStart) renderPanel();
   }
   function buildIngredientOptions() {
     const container=$("ingredientOptions");
@@ -476,12 +480,19 @@
   function bindEvents() {
     document.addEventListener("click",event=>{
       const action=event.target.closest("[data-action]")?.dataset.action;
-      if(action==="open-profile") openProfile();
-      if(action==="skip-profile") openProfile(true);
+      if(action==="home"){
+        event.preventDefault();showStart=true;render();announce("");
+        $("main").focus({preventScroll:true});window.scrollTo(0,0);
+      }
+      if(action==="continue-planning"){
+        showStart=false;render();$("main").focus({preventScroll:true});window.scrollTo(0,0);
+      }
+      if(action==="open-profile") {showStart=false;openProfile();}
+      if(action==="skip-profile") {showStart=false;openProfile(true);}
       if(action==="edit-preferences") openProfile(false,true);
-      if(action==="settings") {activeTab="settings";render();}
+      if(action==="settings") {showStart=false;activeTab="settings";render();}
       const tab=event.target.closest("[data-tab]");
-      if(tab&&!tab.disabled) {activeTab=tab.dataset.tab;render();announce("");}
+      if(tab&&!tab.disabled) {showStart=false;activeTab=tab.dataset.tab;render();announce("");}
     });
     $("profileForm").addEventListener("submit",event=>{
       event.preventDefault();

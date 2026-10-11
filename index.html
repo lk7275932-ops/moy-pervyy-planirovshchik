@@ -46,7 +46,7 @@
 </svg>
 <div class="app-shell">
   <header class="site-header">
-    <a class="brand" href="#main" aria-label="Ложка порядка, начало страницы">
+    <a class="brand" href="#welcome" data-action="home" aria-label="Ложка порядка, стартовая страница">
       <span class="brand-icon" aria-hidden="true">л.</span>
       <span>ложка порядка<span class="brand-subtitle">немного порядка. много заботы.</span></span>
     </a>
@@ -75,6 +75,7 @@
           <h1 id="welcomeTitle">Меньше «что поесть?».<br>Больше спокойствия.</h1>
           <p class="lead">Начнём с вас: настроим профиль и ориентир по калориям. Без строгого начальника в холодильнике.</p>
           <div class="button-row">
+            <button id="continuePlanning" class="button primary" type="button" data-action="continue-planning" hidden>Открыть планировщик →</button>
             <button class="button primary" type="button" data-action="open-profile">Настроить профиль <span aria-hidden="true">→</span></button>
             <button class="button text-button" type="button" data-action="skip-profile">Без персонального расчёта</button>
           </div>
@@ -99,6 +100,7 @@
       <div class="button-row"><button id="downloadOriginal" class="button primary" type="button">Скачать исходные данные</button><button id="resetBroken" class="button secondary" type="button">Начать заново</button></div>
     </section>
     <section id="workspace" hidden>
+      <button class="button text-button home-return" type="button" data-action="home">← На стартовую страницу</button>
       <div class="page-heading"><div><span class="eyebrow" id="sectionEyebrow">Своя еда. Свой ритм.</span><h1 id="sectionTitle">Неделя без драмы</h1></div><span class="pill">Профиль готов</span></div>
       <div id="weekBar" class="week-bar">
         <button type="button" class="icon-button" aria-label="Предыдущая неделя" data-week-shift="-7">←</button>
