@@ -689,7 +689,7 @@
         const next=clone(state);detachPlanLinks(next.days[entry.date],[entry.id]);next.days[entry.date].planEntries=next.days[entry.date].planEntries.filter(e=>e.id!==entry.id);commit(next);
       })));
     const fact=state.days[entry.date]?.actualEntries.find(a=>a.sourcePlanEntryId===entry.id);
-    const eaten=actionButton(fact?"Изменить съеденное":"Съедено",()=>editActual(entry.date,entry,fact));eaten.disabled=entry.date>todayDate();actions.append(eaten);
+    const eaten=actionButton(fact?"Изменить факт":"Записать факт",()=>editActual(entry.date,entry,fact));eaten.disabled=entry.date>todayDate();actions.append(eaten);
     if(fact)actions.append(actionButton("Не съела",()=>removeActual(fact)));dialog.append(actions);
     const currentRecipe=recipeById(entry.recipeId);if(currentRecipe&&!linked(state.days[entry.date],entry))dialog.append(actionButton("Обновить из рецепта",()=>updatePlanRecipe(entry,currentRecipe)));
     const list=node("ul");
@@ -738,7 +738,7 @@
           const next=clone(state);detachPlanLinks(next.days[date],[entry.id]);next.days[date].planEntries=next.days[date].planEntries.filter(e=>e.id!==entry.id);
           if(commit(next))openDayDrinks(date);
         })));
-      const actual=state.days[date].actualEntries.find(a=>a.sourcePlanEntryId===entry.id);const eaten=actionButton(actual?"Изменить съеденное":"Съедено",()=>editActual(date,entry,actual));eaten.disabled=date>todayDate();actions.append(eaten);if(actual)item.append(node("p","✓ Выпито: "+actual.drinkConfig.volumeMl+" мл","eaten-status"));
+      const actual=state.days[date].actualEntries.find(a=>a.sourcePlanEntryId===entry.id);const eaten=actionButton(actual?"Изменить факт":"Записать факт",()=>editActual(date,entry,actual));eaten.disabled=date>todayDate();actions.append(eaten);if(actual)item.append(node("p","✓ Выпито: "+actual.drinkConfig.volumeMl+" мл","eaten-status"));
       item.append(actions);list.append(item);
     });
     dialog.append(list,actionButton("Добавить напиток",()=>editDrink(date),false));
@@ -851,7 +851,7 @@
         section.append(actionButton(mealType==="drink"?"Добавить напиток":"Добавить перекус",()=>mealType==="drink"?editDrink(date):openCatalog(date,mealType)));card.append(section);
       }
       card.append(drinksSummary(date,day));
-      const fact=actionButton(date>todayDate()?"Факт доступен с этой даты":"Съедено: "+format(actualTotal(day))+" ккал · "+day.actualEntries.length,()=>openJournal(date));fact.classList.add("fact-summary");fact.disabled=date>todayDate();card.append(fact);grid.append(card);
+      const fact=actionButton(date>todayDate()?"Факт доступен с этой даты":"Записать факт · "+format(actualTotal(day))+" ккал · "+day.actualEntries.length,()=>openJournal(date));fact.classList.add("fact-summary");fact.disabled=date>todayDate();card.append(fact);grid.append(card);
     });parent.append(grid);alignWeekRows(grid);
   }
   function renderShopping(parent) {
@@ -1205,7 +1205,7 @@
     });
   }
   function openJournal(date) {
-    const day=state.days[date]||{actualEntries:[]},dialog=modal("Съедено · "+prettyDate(date));
+    const day=state.days[date]||{actualEntries:[]},dialog=modal("Журнал факта · "+prettyDate(date));
     dialog.append(node("p","Фактически: "+format(actualTotal(day))+" ккал","notice"));
     const entries=[...day.actualEntries].sort((a,b)=>(a.time||"99:99").localeCompare(b.time||"99:99")||Date.parse(a.createdAt)-Date.parse(b.createdAt));
     if(!entries.length)dialog.append(node("p","Пока нет записей съеденного. План не считается фактом."));
@@ -1214,72 +1214,111 @@
       if(entry.note)card.append(node("p",entry.note,"subtle"));
       card.append(actionButton("Изменить",()=>editActual(date,null,entry)),actionButton("Удалить",()=>removeActual(entry)));dialog.append(card);
     });
-    dialog.append(actionButton("Записать вне плана",()=>editActual(date),false),actionButton("Записать напиток",()=>editActual(date,{mealType:"drink",snapshot:drinkSnapshot({templateId:"coffee",volumeMl:200,milkMl:0,sugarG:0}),drinkConfig:{templateId:"coffee",volumeMl:200,milkMl:0,sugarG:0},portions:1}),false));
+    dialog.append(actionButton("Добавить факт",()=>editActual(date),false));
   }
   function editActual(date,plan=null,existing=null) {
-    if(date>todayDate()){announce("Съеденное можно записать за сегодня или прошлое.");return;}
+    if(date>todayDate()){announce("Факт можно записать за сегодня или прошлое.");return;}
     existing=existing||state.days[date]?.actualEntries.find(a=>plan?.id&&a.sourcePlanEntryId===plan.id)||null;
-    const base=existing||plan,linkedId=existing?.sourcePlanEntryId||plan?.id||null,drink=base?.mealType==="drink";
-    const dialog=modal(existing?"Изменить съеденное":linkedId?"Подтвердить съеденное":"Записать вне плана",true),form=node("form");
-    const dayInput=inputField(form,"Дата съеденного","date",date);dayInput.max=todayDate();dayInput.disabled=!!linkedId;
-    const meal=selectField(form,"Приём пищи",Object.fromEntries(Object.entries(MEALS).filter(([k])=>drink?k==="drink":k!=="drink")),base?.mealType||"snack");meal.disabled=!!linkedId;
+    const base=existing||plan,fixedLink=existing?.sourcePlanEntryId||plan?.id||null;
+    const dialog=modal(existing?"Изменить факт":"Записать факт",true),form=node("form");
+    const dayInput=inputField(form,"Дата съеденного","date",date);dayInput.max=todayDate();dayInput.disabled=!!fixedLink;
+    const meal=selectField(form,"Приём пищи",MEALS,base?.mealType||"snack");meal.disabled=!!fixedLink;
     const time=inputField(form,"Время · необязательно","time",existing?.time||"");
-    let selectedSnapshot=base?.snapshot?clone(base.snapshot):null,mode=null,recipeSelect=null,name=null,kcal=null,portion=null,template=null,volume=null,milk=null,sugar=null;
-    if(drink){
-      const config=base.drinkConfig;
-      template=selectField(form,"Напиток",Object.fromEntries(Object.entries(DRINKS).map(([id,c])=>[id,c.name])),config.templateId);
-      volume=inputField(form,"Общий объём, мл · 50–1000, шаг 10","decimal",config.volumeMl);
-      milk=inputField(form,"Молоко, мл · 0–500","decimal",config.milkMl);sugar=inputField(form,"Сахар, г · 0–50","decimal",config.sugarG);
-      const change=()=>{if(template.value==="water"){milk.value=0;sugar.value=0;}milk.disabled=sugar.disabled=template.value==="water";};
-      template.addEventListener("change",()=>{milk.value=DRINKS[template.value].milk;sugar.value=0;change();});change();
-      let previousVolume=config.volumeMl;
-      form.append(node("p","Изменение объёма само не меняет добавки.","subtle"),actionButton("Пересчитать добавки пропорционально",()=>{
-        if(template.value==="water"){milk.value=0;sugar.value=0;return;}
-        const v=parseNumber(volume.value,50,1000,10),m=parseNumber(milk.value,0,500,1),s=parseNumber(sugar.value,0,50,1);
-        if(v.error||m.error||s.error){errorIn(form,"Сначала введите корректные значения.");return;}
-        milk.value=Math.round(m.value*v.value/previousVolume);sugar.value=Math.round(s.value*v.value/previousVolume);previousVolume=v.value;foodDirty=true;update();
-      }));
-    }else if(selectedSnapshot){
-      form.append(node("p",selectedSnapshot.name));portion=inputField(form,"Фактических порций · 0,25–4, шаг 0,25","decimal",base.portions);
-      if(selectedSnapshot.incompleteIngredients&&selectedSnapshot.calorieMode==="manual"&&!linkedId&&!selectedSnapshot.steps.length){
-        name=inputField(form,"Название","text",selectedSnapshot.name);name.maxLength=80;kcal=inputField(form,"Калории всего съеденного · 0–3000","decimal",base.totalKcalRaw??selectedSnapshot.baseKcal);portion.disabled=true;portion.value=1;
-      }
-    }else{
-      mode=selectField(form,"Источник",{free:"Свободная запись",recipe:"Из каталога"},"free");
-      recipeSelect=selectField(form,"Блюдо",Object.fromEntries(allRecipes().map(r=>[r.id,r.name])),allRecipes()[0]?.id);
-      name=inputField(form,"Название","text","");name.maxLength=80;
-      kcal=inputField(form,"Калории всего съеденного · 0–3000","decimal","");
-      portion=inputField(form,"Фактических порций · для блюда из каталога","decimal",1);
-      const change=()=>{const free=mode.value==="free";recipeSelect.parentElement.hidden=free;portion.parentElement.hidden=free;name.parentElement.hidden=!free;kcal.parentElement.hidden=!free;};
-      mode.addEventListener("change",change);change();
-    }
+    const fresh=!base?.snapshot;
+    const mode=fresh?selectField(form,"Источник",{free:"Вне плана — свободная запись",recipe:"Из каталога",plan:"Съедено по плану"},"free"):null;
+    const planSelect=fresh?selectField(form,"Блюдо или напиток из плана",{},""):null;
+    const controls=node("div");form.append(controls);
     const note=inputField(form,"Заметка и описание порции · необязательно","text",existing?.note||"");note.maxLength=1000;
     const info=node("p",undefined,"notice");form.append(info);
+    let chosenPlan=null,chosenFact=null,snapshot=null,portion=null,recipeSelect=null,name=null,kcal=null,template=null,volume=null,milk=null,sugar=null;
+    function refreshPlans(){
+      if(!planSelect)return;
+      const old=planSelect.value;planSelect.replaceChildren();
+      const prompt=node("option","Выберите запись из плана");prompt.value="";planSelect.append(prompt);
+      const entries=state.days[dayInput.value]?.planEntries||[];
+      entries.filter(e=>e.mealType===meal.value).forEach(e=>{
+        const fact=state.days[dayInput.value].actualEntries.find(a=>a.sourcePlanEntryId===e.id);
+        const option=node("option",e.snapshot.name+(fact?" · факт уже записан":""));option.value=e.id;planSelect.append(option);
+      });
+      if([...planSelect.options].some(o=>o.value===old))planSelect.value=old;
+      else planSelect.value="";
+    }
+    function draw(){
+      controls.replaceChildren();controls.dataset.drink=String(meal.value==="drink");snapshot=null;portion=recipeSelect=name=kcal=template=volume=milk=sugar=null;
+      const fromPlan=mode?.value==="plan";
+      if(planSelect)planSelect.parentElement.hidden=!fromPlan;
+      chosenPlan=fromPlan?(state.days[dayInput.value]?.planEntries||[]).find(e=>e.id===planSelect.value)||null:null;
+      chosenFact=chosenPlan?state.days[dayInput.value].actualEntries.find(a=>a.sourcePlanEntryId===chosenPlan.id)||null:null;
+      const current=chosenFact||chosenPlan||base;
+      if(fromPlan&&!chosenPlan){controls.append(node("p","Выберите приём пищи и запись из плана. Порция из плана будет подставлена автоматически.","subtle"));update();return;}
+      snapshot=current?.snapshot&&(current.mealType==="drink")===(meal.value==="drink")?clone(current.snapshot):null;
+      if(meal.value==="drink"){
+        const config=current?.drinkConfig||{templateId:"coffee",volumeMl:200,milkMl:0,sugarG:0};
+        template=selectField(controls,"Напиток",Object.fromEntries(Object.entries(DRINKS).map(([id,c])=>[id,c.name])),config.templateId);
+        volume=inputField(controls,"Общий объём, мл · 50–1000, шаг 10","decimal",config.volumeMl);
+        milk=inputField(controls,"Молоко, мл · 0–500","decimal",config.milkMl);sugar=inputField(controls,"Сахар, г · 0–50","decimal",config.sugarG);
+        const change=()=>{if(template.value==="water"){milk.value=0;sugar.value=0;}milk.disabled=sugar.disabled=template.value==="water";};
+        template.addEventListener("change",()=>{milk.value=DRINKS[template.value].milk;sugar.value=0;change();update();});change();
+        let previousVolume=config.volumeMl;
+        controls.append(node("p","Изменение объёма само не меняет добавки.","subtle"),actionButton("Пересчитать добавки пропорционально",()=>{
+          if(template.value==="water"){milk.value=0;sugar.value=0;update();return;}
+          const v=parseNumber(volume.value,50,1000,10),m=parseNumber(milk.value,0,500,1),s=parseNumber(sugar.value,0,50,1);
+          if(v.error||m.error||s.error){errorIn(form,"Сначала введите корректные значения.");return;}
+          milk.value=Math.round(m.value*v.value/previousVolume);sugar.value=Math.round(s.value*v.value/previousVolume);previousVolume=v.value;foodDirty=true;update();
+        }));
+      }else if(snapshot){
+        controls.append(node("p",snapshot.name));portion=inputField(controls,"Фактических порций · 0,25–4, шаг 0,25","decimal",current.portions);
+        if(snapshot.incompleteIngredients&&snapshot.calorieMode==="manual"&&!fixedLink&&!chosenPlan&&!snapshot.steps.length){
+          name=inputField(controls,"Название","text",snapshot.name);name.maxLength=80;kcal=inputField(controls,"Калории всего съеденного · 0–3000","decimal",current.totalKcalRaw??snapshot.baseKcal);portion.disabled=true;portion.value=1;
+        }
+      }else if(mode?.value==="recipe"){
+        recipeSelect=selectField(controls,"Блюдо",Object.fromEntries(allRecipes().map(r=>[r.id,r.name])),allRecipes()[0]?.id);
+        portion=inputField(controls,"Фактических порций · для блюда из каталога","decimal",1);
+      }else{
+        name=inputField(controls,"Название","text","");name.maxLength=80;
+        kcal=inputField(controls,"Калории всего съеденного · 0–3000","decimal","");
+      }
+      if(chosenFact)controls.append(node("p","Факт уже записан. Сохранение изменит эту запись, без дубликата.","subtle"));
+      update();
+    }
     function read(){
-      let snapshot=selectedSnapshot,portions=1,drinkConfig=null;
-      if(drink){
+      if(mode?.value==="plan"&&!chosenPlan)return {error:"Выберите запись из плана."};
+      let resultSnapshot=snapshot,portions=1,drinkConfig=null;
+      if(meal.value==="drink"){
         const v=parseNumber(volume.value,50,1000,10),m=parseNumber(milk.value,0,500,1),s=parseNumber(sugar.value,0,50,1);
         if(v.error||m.error||s.error||m.value>v.value)return {error:v.error||m.error||s.error||"Молока больше общего объёма."};
-        drinkConfig={templateId:template.value,volumeMl:v.value,milkMl:m.value,sugarG:s.value};snapshot=drinkSnapshot(drinkConfig);
-      }else if(!mode&&kcal||mode?.value==="free"){
+        drinkConfig={templateId:template.value,volumeMl:v.value,milkMl:m.value,sugarG:s.value};resultSnapshot=drinkSnapshot(drinkConfig);
+      }else if(kcal){
         const k=parseNumber(kcal.value,0,3000,.000001);if(k.error)return {error:k.error};
-        const title=name?name.value.trim():snapshot.name;if(!title)return {error:"Укажите название."};
-        snapshot={name:title,sourceType:"homemade",baseKcal:k.value,ingredients:[],steps:[],incompleteIngredients:true,opaquePackaged:false,calorieMode:"manual"};
+        const title=name.value.trim();if(!title)return {error:"Укажите название."};
+        resultSnapshot={name:title,sourceType:"homemade",baseKcal:k.value,ingredients:[],steps:[],incompleteIngredients:true,opaquePackaged:false,calorieMode:"manual"};
       }else{
-        if(mode)snapshot=recipeSnapshot(recipeById(recipeSelect.value));
+        if(recipeSelect)resultSnapshot=recipeSnapshot(recipeById(recipeSelect.value));
         const q=parseNumber(portion.value,.25,4,.25);if(q.error)return {error:q.error};portions=q.value;
       }
-      return {snapshot,portions,drinkConfig,totalKcalRaw:snapshot.baseKcal*portions};
+      return {snapshot:resultSnapshot,portions,drinkConfig,totalKcalRaw:resultSnapshot.baseKcal*portions};
     }
-    const update=()=>{try{const r=read();info.textContent=r.error||"Факт: "+format(r.totalKcalRaw)+" ккал. План и покупки не изменятся.";}catch{info.textContent="Выберите блюдо.";}};form.addEventListener("input",update);update();
-    const save=node("button","Сохранить съеденное","button primary");save.type="submit";form.append(save);dialog.append(form);
+    function update(){try{const r=read();info.textContent=r.error||"Факт: "+format(r.totalKcalRaw)+" ккал. План и покупки не изменятся.";}catch{info.textContent="Выберите блюдо.";}}
+    function changeMeal(){
+      if(mode){const option=mode.querySelector('option[value="recipe"]');option.disabled=meal.value==="drink";if(option.disabled&&mode.value==="recipe")mode.value="free";}
+      refreshPlans();if(mode?.value==="plan"||controls.dataset.drink!==String(meal.value==="drink"))draw();else update();
+    }
+    meal.addEventListener("change",changeMeal);dayInput.addEventListener("change",()=>{refreshPlans();if(mode?.value==="plan")draw();else update();});
+    mode?.addEventListener("change",draw);
+    planSelect?.addEventListener("change",()=>{
+      const fact=state.days[dayInput.value]?.actualEntries.find(a=>a.sourcePlanEntryId===planSelect.value);
+      time.value=fact?.time||"";note.value=fact?.note||"";draw();
+    });
+    form.addEventListener("input",update);form.addEventListener("change",update);refreshPlans();draw();
+    const save=node("button","Сохранить факт","button primary");save.type="submit";form.append(save);dialog.append(form);
     form.addEventListener("submit",event=>{
       event.preventDefault();const result=read();
       if(result.error||!validDate(dayInput.value)||dayInput.value>todayDate()){errorIn(form,result.error||"Дата должна быть сегодня или в прошлом.");return;}
-      const entry={id:existing?.id||uid("ae_"),date:dayInput.value,mealType:meal.value,time:time.value||null,sourcePlanEntryId:linkedId,snapshot:result.snapshot,portions:result.portions,drinkConfig:result.drinkConfig,totalKcalRaw:result.totalKcalRaw,note:note.value.trim(),createdAt:existing?.createdAt||new Date().toISOString()};
+      const prior=existing||chosenFact,linkedId=fixedLink||chosenPlan?.id||null;
+      const entry={id:prior?.id||uid("ae_"),date:dayInput.value,mealType:meal.value,time:time.value||null,sourcePlanEntryId:linkedId,snapshot:result.snapshot,portions:result.portions,drinkConfig:result.drinkConfig,totalKcalRaw:result.totalKcalRaw,note:note.value.trim(),createdAt:prior?.createdAt||new Date().toISOString()};
       try{
         let next=clone(state);if(existing&&existing.date!==entry.date)next.days[existing.date].actualEntries=next.days[existing.date].actualEntries.filter(a=>a.id!==existing.id);
-        next=putActual(next,entry.date,entry);if(commit(next)){closeFood(true);announce("Съеденное записано.");}
+        next=putActual(next,entry.date,entry);if(commit(next)){closeFood(true);announce("Факт записан.");}
       }catch(error){errorIn(form,error.message);}
     });
   }
