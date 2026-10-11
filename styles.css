@@ -413,7 +413,8 @@ fieldset {min-width:0;border:1px solid var(--color-border);border-radius:var(--r
   .recipe-wizard .recipe-basics {grid-template-columns:1fr;gap:0;}
   .recipe-wizard-actions>.button {min-width:0;flex:1;}
 }
-.recipe-entry-fields {display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:var(--space-3);}
+.recipe-entry-fields {display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) 44px;gap:var(--space-2);align-items:end;}
 .recipe-entry-fields>.field {display:flex;flex-direction:column;justify-content:flex-end;min-width:0;}
-.recipe-ingredients>.button-row {display:grid;grid-template-columns:1fr 1fr;gap:var(--space-2);}
-.recipe-ingredients>.button-row>.button {height:100%;padding:var(--space-2);}
+
+.recipe-entry-fields .ingredient-add {width:44px;min-width:44px;height:48px;padding:0;margin-bottom:var(--space-3);font-size:1.25rem;}
+.recipe-entry-fields select {white-space:nowrap;text-overflow:ellipsis;overflow:hidden;}

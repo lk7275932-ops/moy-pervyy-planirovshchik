@@ -1444,13 +1444,12 @@
     const ingredients=clone(recipe.ingredients),ingredientArea=node("section",undefined,"recipe-ingredients"),list=node("div",undefined,"recipe-ingredient-list");
     const composition=checkField("Добавить состав для списка покупок",ingredients.length>0,()=>{update();}),compositionInput=composition.querySelector("input");pages[1].append(composition,ingredientArea);
     ingredientArea.append(node("h3","Ингредиенты на 1 порцию"),list);
-    const choices=()=>({"":"Выберите…",...Object.fromEntries(allFood().filter(i=>!i.archived||ingredients.some(x=>x.ingredientId===i.id)).map(i=>[i.id,i.name+" · "+(i.unit==="g"?"г":i.unit==="ml"?"мл":"шт.")]))});
+    const choices=()=>({"":"Выберите…","__new_product__":"＋ Создать новый продукт…",...Object.fromEntries(allFood().filter(i=>!i.archived||ingredients.some(x=>x.ingredientId===i.id)).map(i=>[i.id,i.name+" · "+(i.unit==="g"?"г":i.unit==="ml"?"мл":"шт.")]))});
     const entryFields=node("div",undefined,"recipe-entry-fields");ingredientArea.append(entryFields);
     const selected=selectField(entryFields,"Ингредиент",choices(),"");
     const quantity=inputField(entryFields,"Количество","decimal","");
     function updateQuantityUnit(){const food=foodById(selected.value);quantity.parentElement.querySelector("label").textContent="Количество"+(food?", "+(food.unit==="g"?"г":food.unit==="ml"?"мл":"шт."):"");}
-    selected.addEventListener("change",updateQuantityUnit);
-    const ingredientActions=node("div",undefined,"button-row");ingredientArea.append(ingredientActions);
+    selected.addEventListener("change",()=>{if(selected.value==="__new_product__"){selected.value="";updateQuantityUnit();openNewProduct();}else updateQuantityUnit();});
     function refresh(){
       list.replaceChildren();ingredients.forEach((i,n)=>{
         const food=foodById(i.ingredientId),row=node("div",undefined,"ingredient-line");
@@ -1458,16 +1457,18 @@
         row.append(node("span",food.name+" — "+format(i.quantity,3)+" "+(food.unit==="g"?"г":food.unit==="ml"?"мл":"шт.")),remove);list.append(row);
       });update();
     }
-    ingredientActions.append(actionButton("Добавить ингредиент",()=>{
+    function addIngredient(){
       const q=parseNumber(quantity.value,.000001,100000,.000001);
       if(!selected.value||q.error||ingredients.length>=40||ingredients.some(i=>i.ingredientId===selected.value)){showError(1,!selected.value?"Выберите ингредиент.":q.error||"До 40 разных ингредиентов. Этот продукт уже добавлен.",!selected.value?selected:quantity);return;}
-      ingredients.push({ingredientId:selected.value,quantity:q.value});quantity.value="";selected.value="";updateQuantityUnit();error.hidden=true;foodDirty=true;refresh();
-    }));
-    const createProduct=actionButton("Новый продукт",openNewProduct);ingredientActions.append(createProduct);
+      ingredients.push({ingredientId:selected.value,quantity:q.value});quantity.value="";selected.value="";updateQuantityUnit();error.hidden=true;foodDirty=true;refresh();selected.focus({preventScroll:true});
+    }
+    const add=actionButton("✓",addIngredient,false);add.classList.add("ingredient-add");add.setAttribute("aria-label","Добавить ингредиент");add.title="Добавить ингредиент · Enter в поле количества";entryFields.append(add);
+    quantity.enterKeyHint="done";
+    quantity.addEventListener("keydown",event=>{if(event.key==="Enter"&&!event.isComposing){event.preventDefault();event.stopPropagation();addIngredient();}});
     function openNewProduct(){
       const child=node("dialog",undefined,"recipe-product-dialog"),heading=node("div",undefined,"dialog-heading"),title=node("h2","Новый продукт");title.id=uid("title_");child.setAttribute("aria-labelledby",title.id);
       let dirty=false;
-      function finish(){child.close();child.remove();createProduct.focus({preventScroll:true});}
+      function finish(){child.close();child.remove();selected.focus({preventScroll:true});}
       function cancel(){
         if(!dirty){finish();return;}
         if(child.querySelector(".discard-prompt"))return;
@@ -1526,7 +1527,7 @@
         const min=parseNumber(minutes.value,0,240,1);if(min.error){showError(0,min.error,minutes);return false;}
       }
       if(index===1){
-        if(quantity.value.trim()&&!ingredientArea.hidden){showError(1,"Нажмите «Добавить ингредиент» или очистите количество.",quantity);return false;}
+        if(quantity.value.trim()&&!ingredientArea.hidden){showError(1,"Нажмите ✓ или Enter, чтобы добавить ингредиент, либо очистите количество.",quantity);return false;}
         if(mode.value==="manual"){const k=parseNumber(manual.value,0,3000,.000001);if(k.error){showError(1,k.error,manual);return false;}}
         else if(!ingredients.length){showError(1,"Добавьте ингредиенты или выберите «Указать калории».",selected);return false;}
       }
