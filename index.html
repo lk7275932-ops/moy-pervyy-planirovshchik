@@ -56,7 +56,7 @@
     <p id="storageMessage"></p>
     <div class="button-row">
       <button id="retrySave" class="button small secondary" type="button">Повторить сохранение</button>
-      <button id="emergencyExport" class="button small secondary" type="button">Скачать текущие данные</button>
+      <button id="emergencyExport" class="button small secondary" type="button">Скачать резервную копию</button>
       <button id="reloadState" class="button small secondary" type="button" hidden>Обновить страницу</button>
     </div>
   </div>
@@ -77,7 +77,7 @@
           <div class="start-actions">
             <button class="button primary" type="button" data-action="open-profile">Настроить профиль <span aria-hidden="true">→</span></button>
             <button id="continuePlanning" class="button primary" type="button" data-action="continue-planning" hidden>Открыть планировщик →</button>
-            <button class="button secondary" type="button" data-action="import">Импорт резервной копии</button>
+            <button class="button secondary" type="button" data-action="import">Восстановить из резервной копии</button>
           </div>
           <button class="button text-button start-skip" type="button" data-action="skip-profile">Без персонального расчёта</button>
           <p class="subtle">После настройки можно составить меню и список покупок.</p>
@@ -98,7 +98,7 @@
       <h1 id="recoveryTitle">Данные не удалось прочитать</h1>
       <p id="recoveryReason"></p>
       <p>Исходные данные не изменены. Скачайте их перед тем, как начинать заново.</p>
-      <div class="button-row"><button id="downloadOriginal" class="button primary" type="button">Скачать исходные данные</button><button id="resetBroken" class="button secondary" type="button">Начать заново</button></div>
+      <div class="button-row"><button id="downloadOriginal" class="button primary" type="button">Скачать резервную копию</button><button id="resetBroken" class="button secondary" type="button">Начать заново</button></div>
     </section>
     <section id="workspace" hidden>
       <button class="button text-button home-return" type="button" data-action="home">← На стартовую страницу</button>
@@ -170,9 +170,9 @@
 </dialog>
 
 <dialog id="resetDialog" aria-labelledby="resetTitle">
-  <div class="dialog-heading"><h2 id="resetTitle">Начать заново?</h2><button id="closeReset" class="icon-button" type="button" aria-label="Закрыть подтверждение">×</button></div>
-  <p>Будут удалены только данные «Ложка порядка» в этом браузере. Сначала скачайте исходную копию.</p>
-  <form id="resetForm" novalidate><div class="field"><label for="resetWord">Для подтверждения введите УДАЛИТЬ</label><input id="resetWord" type="text" autocomplete="off" aria-describedby="resetError"><p class="field-error" id="resetError"></p></div><div class="button-row"><button type="submit" class="button primary">Удалить и начать заново</button><button id="cancelReset" type="button" class="button secondary">Отмена</button></div></form>
+  <div class="dialog-heading"><h2 id="resetTitle">Удалить все данные?</h2><button id="closeReset" class="icon-button" type="button" aria-label="Закрыть подтверждение">×</button></div>
+  <p>Будут удалены профиль, меню, записи питания и веса в этом браузере. Перед удалением можно скачать резервную копию.</p>
+  <form id="resetForm" novalidate><p class="field-error" id="resetError" role="alert"></p><div class="button-row"><button id="resetBackup" type="button" class="button secondary">Скачать резервную копию</button><button id="cancelReset" type="button" class="button secondary">Отмена</button><button type="submit" class="button danger">Удалить все данные</button></div></form>
 </dialog>
 <noscript><p class="notice">Для работы планировщика включите JavaScript в браузере.</p></noscript>
 </body>
