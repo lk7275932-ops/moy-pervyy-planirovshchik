@@ -343,3 +343,25 @@ dialog .dialog-actions {flex-wrap:wrap;position:sticky;bottom:0;background:var(-
 /* Shared natural row heights are measured after rendering, without clipping. */
 .day-card-header progress {display:block;}
 .home-return {margin-bottom:var(--space-3);}
+
+/* Daily journal, recipe editor and accessible weight chart. */
+.eaten-status {display:block;font-size:.75rem;color:var(--color-primary);margin-top:var(--space-1);}
+.fact-summary {width:100%;margin-top:var(--space-2);}
+.journal-entry {margin:var(--space-3) 0;}
+.journal-entry .button {margin-right:var(--space-2);}
+.ingredient-editor {margin:var(--space-3) 0;}
+.ingredient-line {display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);margin-bottom:var(--space-2);}
+.ingredient-line > span {min-width:0;overflow-wrap:anywhere;}
+.new-ingredient {margin-top:var(--space-3);}
+.new-ingredient summary {min-height:44px;cursor:pointer;color:var(--color-primary);font-weight:600;}
+fieldset {min-width:0;border:1px solid var(--color-border);border-radius:var(--radius-small);margin-bottom:var(--space-3);}
+.weight-tabs {margin:var(--space-4) 0;}
+.weight-chart svg {display:block;width:100%;max-width:700px;margin:auto;}
+.weight-chart svg text {font-size:11px;fill:var(--color-muted);}
+.weight-table {width:100%;border-collapse:collapse;table-layout:fixed;}
+.weight-table th,.weight-table td {text-align:left;vertical-align:top;padding:var(--space-2) var(--space-1);border-bottom:1px solid var(--color-border);overflow-wrap:anywhere;}
+.weight-table th:last-child,.weight-table td:last-child {width:46%;}
+.weight-table .button {padding:var(--space-2);font-size:.75rem;margin:var(--space-1);}
+.weight-table caption {text-align:left;font-weight:700;margin:var(--space-3) 0;}
+.settings-grid .button {margin:var(--space-1);}
+#downloadFallback {overflow-wrap:anywhere;}

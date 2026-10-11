@@ -308,7 +308,7 @@ weightLog содержит не более одной записи на дату
 
 PlanEntry:
 - id, date, mealType, recipeId|null;
-- snapshot: {name, sourceType, baseKcal, ingredients:[{ingredientId,name,group,unit,quantity,kcalRate}], steps[], incompleteIngredients:boolean};
+- snapshot: {name, sourceType, baseKcal, ingredients:[{ingredientId,name,group,unit,quantity,kcalRate}], steps[], incompleteIngredients:boolean, calorieMode ingredients/manual};
 - portions; drinkConfig|null: {templateId, volumeMl, milkMl, sugarG};
 - locked:boolean, origin manual/generated/copied, createdAt.
 
@@ -473,7 +473,7 @@ ID: crypto.randomUUID при доступности; иначе генерато
 
 Строка recipe.ingredients = {ingredientId, quantity}; quantity — количество на базовую порцию в единице справочника. Для g/ml: kcalRate = kcalPer100 / 100; для pcs: kcalRate = kcalPerUnit. В снимке kcalRate всегда калории на ОДНУ единицу, а не на сто.
 
-snapshot.baseKcal = сумма(quantity × kcalRate) либо явно введённые manualKcal. snapshot.ingredients сохраняет исходные количества на базовую порцию. Для напитка snapshot содержит конкретные выбранные количества coffee/tea/milk/sugar, baseKcal уже включает добавки; drinkConfig — метаданные формы. portions напитка всегда 1. Не добавлять калории молока и сахара повторно поверх снимка.
+snapshot.baseKcal = сумма(quantity × kcalRate) либо явно введённые manualKcal. Снимок дополнительно хранит calorieMode (ingredients/manual), чтобы валидатор мог однозначно проверить источник калорий независимо от последующего изменения или удаления каталога. Старые снимки шага 2 без этого поля читаются как ingredients; ручных рецептов и факта в них ещё не было. snapshot.ingredients сохраняет исходные количества на базовую порцию. Для напитка snapshot содержит конкретные выбранные количества coffee/tea/milk/sugar, baseKcal уже включает добавки; drinkConfig — метаданные формы. portions напитка всегда 1. Не добавлять калории молока и сахара повторно поверх снимка.
 
 При изменении напитка построить новый снимок из drinkConfig. При обычном блюде snapshot.baseKcal × portions — итог записи; ingredients.quantity × portions — потребность. Никакие вычисляемые поля не должны быть независимым вторым источником истины. В таблицах приложения A хранятся точные базовые количества; округление покупок из раздела 11 не влияет на снимки.
 

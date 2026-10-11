@@ -100,49 +100,8 @@
     return errors;
   }
   function validateState(candidate) {
-    if (!isRecord(candidate)) return ["Неверная структура данных."];
-    let dangerous = false;
-    const walk = (item,depth=0) => {
-      if (depth>30) {dangerous=true;return;}
-      if (item && typeof item === "object") Object.keys(item).forEach(key => {
-        if (["__proto__","prototype","constructor"].includes(key)) dangerous=true;
-        else walk(item[key],depth+1);
-      });
-    };
-    walk(candidate);
-    if (dangerous) return ["Небезопасная или слишком глубокая структура данных."];
-    if (candidate.schemaVersion !== 1) return ["Версия данных не поддерживается. Откройте подходящую версию приложения."];
-    const errors=validateProfile(candidate.profile);
-    if (typeof candidate.updatedAt !== "string" || !Number.isFinite(Date.parse(candidate.updatedAt))) errors.push("Некорректная дата сохранения.");
-    const settings=candidate.settings;
-    if (!isRecord(settings)) return [...errors,"Нет настроек."];
-    if (![15,20,30].includes(settings.maxPrepMinutes)) errors.push("Некорректное время приготовления.");
-    ["allowReadyMeals","allowRepeats","autoSnack","tipsEnabled","animationsEnabled"].forEach(k => {if(typeof settings[k] !== "boolean") errors.push("Некорректная настройка "+k+".");});
-    const knownIngredients=new Set(INGREDIENTS.map(([id])=>id));
-    if (!Array.isArray(settings.excludedIngredientIds) || settings.excludedIngredientIds.some(id=>!knownIngredients.has(id)) || new Set(settings.excludedIngredientIds).size !== settings.excludedIngredientIds.length) errors.push("Некорректные исключения.");
-    if (!Array.isArray(settings.favoriteRecipeIds) || settings.favoriteRecipeIds.some(id=>typeof id!=="string")) errors.push("Некорректное избранное.");
-    ["customIngredients","customRecipes","weightLog"].forEach(k=>{if(!Array.isArray(candidate[k])) errors.push("Некорректная коллекция "+k+".");});
-    ["pantry","days","shoppingMarks"].forEach(k=>{if(!isRecord(candidate[k])) errors.push("Некорректная коллекция "+k+".");});
-    if (isRecord(candidate.pantry) && Object.values(candidate.pantry).some(v=>typeof v!=="boolean")) errors.push("Некорректные отметки запасов.");
-    if (Array.isArray(candidate.customRecipes) && candidate.customRecipes.length || Array.isArray(candidate.customIngredients) && candidate.customIngredients.length)
-      errors.push("Эта версия ещё не поддерживает сохранённый каталог или покупки. Исходные данные оставлены без изменений.");
-    if(candidate.lastGeneration!==null&&(!isRecord(candidate.lastGeneration)||!validDate(candidate.lastGeneration.weekStart)||!Number.isInteger(candidate.lastGeneration.seed)||candidate.lastGeneration.algorithmVersion!==1))errors.push("Некорректные данные подбора.");
-    if (isRecord(candidate.days)) {
-      if (Object.keys(candidate.days).length>10000) errors.push("Слишком много дней.");
-      Object.entries(candidate.days).forEach(([date,day])=>{
-        if (!validDate(date) || !isRecord(day) || day.date!==date || !(day.goalKcal===null || Number.isInteger(day.goalKcal)&&day.goalKcal>=1000&&day.goalKcal<=5000) || !Array.isArray(day.planEntries)||!Array.isArray(day.actualEntries)) errors.push("Некорректный день "+date+".");
-        else { errors.push(...validatePlanDay(day)); if(day.actualEntries.length) errors.push("Журнал факта завершается на шаге 3."); }
-      });
-    }
-    if (Array.isArray(candidate.weightLog)) {
-      const dates=new Set(),ids=new Set();
-      candidate.weightLog.forEach(entry=>{
-        if (!isRecord(entry)||typeof entry.id!=="string"||!entry.id||!validDate(entry.date)||entry.date>todayDate()||typeof entry.weightKg!=="number"||parseNumber(entry.weightKg,30,300,0.1).error||typeof entry.note!=="string"||entry.note.length>300||dates.has(entry.date)||ids.has(entry.id)) errors.push("Некорректное измерение веса.");
-        else {dates.add(entry.date);ids.add(entry.id);}
-      });
-    }
-    errors.push(...validateShopping(candidate));
-    return errors;
+    const result=checkStructure(candidate,STATE_SCHEMA,"state");
+    return result.errors.length?result.errors:validateRelations(result.value);
   }
   // Pure functions are reusable in subsequent steps and can be tested without UI state.
   window.MenuWithoutDrama = Object.freeze({parseNumber,calorieGoal,validateProfile,validateState,createEmptyState,todayDate,addCalendarDays,mondayOf});
@@ -154,8 +113,11 @@
     if(className) el.className=className;
     return el;
   }
+  let uidCounter=0;
+  const issuedIds=new Set();
   function uid(prefix) {
-    return prefix + (window.crypto?.randomUUID ? window.crypto.randomUUID() : Date.now().toString(36)+"-"+Math.random().toString(36).slice(2));
+    let id;do{id=prefix+(window.crypto?.randomUUID?window.crypto.randomUUID():Date.now().toString(36)+"-"+Math.random().toString(36).slice(2)+"-"+(++uidCounter));}while(issuedIds.has(id));
+    issuedIds.add(id);return id;
   }
   function storageText(error) {
     if(error?.name==="QuotaExceededError") return "Место для данных закончилось. Последние изменения пока не сохранены — скачайте текущие данные.";
@@ -175,7 +137,7 @@
         try {candidate=JSON.parse(raw);} catch {recovery=true;$("recoveryReason").textContent="Сохранённый текст не является корректным JSON.";return;}
         const errors=validateState(candidate);
         if(errors.length) {recovery=true;$("recoveryReason").textContent=errors[0];return;}
-        state=candidate;
+        state=checkStructure(candidate,STATE_SCHEMA).value;rememberIds(state);
       }
     } catch(error) {storageError=error;}
   }
@@ -195,6 +157,7 @@
     } catch(error) {storageError=error;unsaved=true;}
     state=next;
     render();
+    if(storageError?.name==="QuotaExceededError"&&!quotaShown){quotaShown=true;setTimeout(showQuotaDialog,0);}
     return true;
   }
   function renderStorage() {
@@ -234,57 +197,9 @@
     const use=document.createElementNS("http://www.w3.org/2000/svg","use");use.setAttribute("href","#"+id);svg.append(use);return svg;
   }
   function renderPanel() {
-    if (renderFoodPanel()) return;
-    const panel=$("panelContent");panel.replaceChildren();
-    const labels={week:["Своя еда. Свой ритм.","Неделя без драмы"],recipes:["Простая еда на каждый день","Ваши блюда"],shopping:["Меньше забытых продуктов","Покупки"],weight:["Спокойно наблюдаем","Ваш вес"],settings:["План подстраивается под вас","Настройки"]};
-    $("sectionEyebrow").textContent=labels[activeTab][0];$("sectionTitle").textContent=labels[activeTab][1];
-    $("weekBar").hidden=activeTab!=="week";
-    if(activeTab==="settings") {
-      const grid=node("div",undefined,"settings-grid");
-      const profile=node("section",undefined,"card");profile.append(node("h2","Личный профиль"),summaryList(profileSummary()),button("Изменить профиль","open-profile"));
-      const pref=node("section",undefined,"card");pref.append(node("h2","Ваши предпочтения"));
-      const options=[["Время готовки","До "+state.settings.maxPrepMinutes+" минут"],["Готовые блюда",state.settings.allowReadyMeals?"Можно":"Не подбирать"],["Повторение",state.settings.allowRepeats?"Разрешено":"Без повторов"],["Перекус в подборе",state.settings.autoSnack?"Добавлять":"Не добавлять"],["Подсказки",state.settings.tipsEnabled?"Включены":"Выключены"],["Анимации",state.settings.animationsEnabled?"Включены":"Выключены"]];
-      pref.append(summaryList(options),button("Изменить предпочтения","edit-preferences",true));
-      const excluded=node("section",undefined,"card wide");excluded.append(node("h2","Исключённые продукты"));
-      const chips=node("div",undefined,"chips");
-      const selected=state.settings.excludedIngredientIds;
-      if(!selected.length) excluded.append(node("p","Нет исключений."));
-      else INGREDIENTS.filter(([id])=>selected.includes(id)).forEach(([,name])=>chips.append(node("span",name,"pill")));
-      excluded.append(chips,button("Изменить исключения","open-profile",true));
-      const pending=node("section",undefined,"card wide");pending.append(node("h2","Продукты дома и резервные копии"),node("p","Отметьте продукты, которые есть дома. Полный импорт и экспорт появятся на шаге 3."));
-      const btn=button("Импорт и экспорт","unavailable",true);btn.disabled=true;pending.append(button("Продукты дома","pantry",true),btn);
-      const bytes=JSON.stringify(state).length*2;pending.append(node("p","Объём данных: примерно "+format(bytes/1024,1)+" КиБ. Данные относятся к этому браузеру.","subtle"));
-      grid.append(profile,pref,excluded,pending);panel.append(grid);return;
-    }
-    if(activeTab==="week") {
-      const stats=node("div",undefined,"stats");
-      const p=state.profile;
-      [
-        ["Ориентир на день",p.dailyKcalGoal===null?"Без цели":format(p.dailyKcalGoal)+" ккал","Можно изменить в настройках"],
-        ["Желаемый вес",p.goalWeightKg===null?"Не указан":format(p.goalWeightKg,1)+" кг","Темп не является обещанием"],
-        ["Приготовление","До "+state.settings.maxPrepMinutes+" минут","Простые блюда — ваш выбор"]
-      ].forEach(([label,value,detail])=>{const card=node("article",undefined,"card");card.append(node("span",label,"stat-label"),node("span",value,"stat-value"),node("span",detail,"stat-detail"));stats.append(card);});
-      panel.append(stats);
-    }
-    const card=node("section",undefined,"card next-card"),copy=node("div");
-    const copyMap={
-      week:["Сначала ориентир, потом меню","Профиль настроен. Планирование недели, блюда и покупки пока недоступны — они появятся в следующей версии.","Создать меню","wooden-spoon"],
-      recipes:["Здесь будут ваши простые блюда","Каталог, рецепты и выбор блюд пока недоступны. Предпочтения уже сохранены в профиле.","Выбрать блюдо","carrot"],
-      shopping:["Список без лишних расследований","Покупки на завтра и неделю, отметки «есть дома» и скачивание списка пока недоступны.","Составить покупки","coffee-cup"],
-      weight:["Начало уже есть","График и журнал веса пока недоступны. Начальное измерение сохранено, если вы указали текущий вес.","Добавить измерение","carrot"]
-    };
-    const [title,text,action,art]=copyMap[activeTab];
-    copy.append(node("span","Пока доступен профиль","eyebrow"),node("h2",title),node("p",text));
-    if(activeTab==="weight"&&state.weightLog.length) {
-      const latest=[...state.weightLog].sort((a,b)=>b.date.localeCompare(a.date))[0];
-      copy.append(node("p","Начальное измерение: "+format(latest.weightKg,1)+" кг · "+latest.date,"subtle"));
-    }
-    const unavailable=button(action,"unavailable");unavailable.disabled=true;copy.append(unavailable);
-    copy.append(button("Открыть настройки","settings",true));
-    card.append(copy,illustration(art));panel.append(card);
-    if(state.settings.tipsEnabled) {
-      const tip=node("p","План можно менять — он не начальник.","notice notice-tip");panel.append(tip);
-    }
+    if(renderFoodPanel())return;
+    if(activeTab==="weight"){renderWeight($("panelContent"));return;}
+    renderSettings($("panelContent"));
   }
   function render() {
     weekRowObserver?.disconnect();weekRowObserver=null;
@@ -304,11 +219,11 @@
     const dateLabel=(date)=>{const [y,m,d]=date.split("-").map(Number);return new Date(y,m-1,d,12).toLocaleDateString("ru-RU",{day:"numeric",month:"long"});};
     $("weekLabel").textContent=dateLabel(monday)+" — "+dateLabel(sunday);
     renderStorage();
-    if(state.profile.completed&&!recovery&&!showStart) renderPanel();
+    if(state.profile.completed&&!recovery&&!showStart){renderPanel();renderTip($("panelContent"));}
   }
   function buildIngredientOptions() {
     const container=$("ingredientOptions");
-    INGREDIENTS.forEach(([id,name])=>{
+    allFood().forEach(({id,name})=>{
       const label=node("label",undefined,"check-line");
       label.dataset.ingredientName=name.toLocaleLowerCase("ru-RU");
       const input=document.createElement("input");input.type="checkbox";input.name="excluded";input.value=id;input.id="exclude-"+id;
@@ -364,6 +279,7 @@
     if(value) $("goalMode").value="none";
   }
   function openProfile(skip=false,preferences=false) {
+    $("ingredientOptions").replaceChildren();buildIngredientOptions();
     if(recovery)return;
     clearErrors();fillForm();
     setSkip(skip||state.profile.completed&&state.profile.age===null);
@@ -428,7 +344,7 @@
       preview.append(node("p","Используем вашу цель. От 1000 до 5000 ккал, целым числом. Это не индивидуальное назначение."));
       const value=parseNumber($("dailyKcalGoal").value,1000,5000,1);
       if(!value.error && value.value<manualThreshold(p.formulaSex)) $("lowGoalWarning").hidden=false;
-    } else preview.append(node("p","Без калорийной цели. Позже можно будет планировать блюда и записывать съеденное без дневного ориентира."));
+    } else preview.append(node("p","Без калорийной цели. Можно планировать блюда и записывать съеденное без дневного ориентира."));
     preview.append(node("p","Ориентир, а не назначение. Изменение веса индивидуально; темп не гарантируется.","subtle"));
     const goal=p.goalMode==="none"?null:p.goalMode==="calculated"&&calc.ok?calc.goal:Number($("dailyKcalGoal").value);
     $("applyGoalField").hidden=!state.profile.completed||goal===state.profile.dailyKcalGoal;
@@ -469,10 +385,14 @@
     $("ingredientOptions").querySelectorAll("label").forEach(el=>{el.hidden=!el.dataset.ingredientName.includes(term);if(!el.hidden)visible++;});
     $("ingredientEmpty").hidden=visible!==0;
   }
-  function downloadText(text,filename,mime="application/json") {
-    const url=URL.createObjectURL(new Blob([text],{type:mime+";charset=utf-8"}));
-    const a=node("a","Скачать файл");a.href=url;a.download=filename;
-    document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+  let lastDownloadUrl=null;
+  function downloadText(text,filename,type="application/json") {
+    if(lastDownloadUrl)URL.revokeObjectURL(lastDownloadUrl);
+    lastDownloadUrl=URL.createObjectURL(new Blob([text],{type:type+";charset=utf-8"}));
+    const a=node("a","Скачать: "+filename);a.href=lastDownloadUrl;a.download=filename;
+    let fallback=$("downloadFallback");if(!fallback){fallback=node("p",undefined,"notice");fallback.id="downloadFallback";}
+    (foodDialog||$("main")).append(fallback);
+    fallback.replaceChildren(node("span","Если скачивание не началось, нажмите ссылку: "),a);a.click();
   }
   function emergencyExport() {
     downloadText(JSON.stringify({appId:"menu-without-drama",schemaVersion:1,catalogVersion:1,exportedAt:new Date().toISOString(),state},null,2),"lozhka-poryadka-"+todayDate()+".json");
@@ -534,6 +454,7 @@
         if(window.localStorage.getItem(KEY)!==lastSavedRaw) {$("resetError").textContent="Исходные данные изменились. Обновите страницу.";return;}
         window.localStorage.removeItem(KEY);
         state=createEmptyState();lastSavedRaw=null;originalRaw=null;recovery=false;storageError=null;conflict=false;unsaved=false;
+        if(lastDownloadUrl){URL.revokeObjectURL(lastDownloadUrl);lastDownloadUrl=null;}$("downloadFallback")?.remove();
         closeReset();render();announce("Можно начать с нового профиля.");
       } catch {$("resetError").textContent="Браузер не разрешил удалить данные. Исходная копия не изменена.";}
     });
@@ -552,15 +473,18 @@
   let foodDialog=null,foodDirty=false,foodCancelled=false,generationRunning=false;
   const expandedExtras=new Set();
   let catalogFilters={query:"",meal:"",minutes:"",noCook:false,mine:false,favorites:false,excluded:false};
-  const foodById=id=>FOOD.find(x=>x.id===id),recipeById=id=>RECIPES.find(x=>x.id===id);
+  const allFood=()=>[...FOOD,...state.customIngredients],allRecipes=()=>[...RECIPES,...state.customRecipes];
+  const foodById=id=>allFood().find(x=>x.id===id),recipeById=id=>allRecipes().find(x=>x.id===id);
   const dayDates=week=>Array.from({length:7},(_,i)=>addCalendarDays(week,i));
   function prettyDate(date,short=false) {
     const [y,m,d]=date.split("-").map(Number);
     return new Date(y,m-1,d,12).toLocaleDateString("ru-RU",{weekday:short?"short":"long",day:"numeric",month:short?"short":"long"});
   }
-  function recipeSnapshot(recipe) {
-    const ingredients=recipe.ingredients.map(({ingredientId,quantity})=>{const item=foodById(ingredientId);return {ingredientId,name:item.name,group:item.group,unit:item.unit,quantity,kcalRate:item.kcalPer100/100};});
-    return {name:recipe.name,sourceType:recipe.sourceType,baseKcal:ingredients.reduce((n,i)=>n+i.quantity*i.kcalRate,0),ingredients,steps:[...recipe.steps],incompleteIngredients:false,opaquePackaged:false};
+  function recipeSnapshot(recipe,sourceFood=allFood()) {
+    const ingredients=recipe.ingredients.map(({ingredientId,quantity})=>{
+      const item=sourceFood.find(i=>i.id===ingredientId);return {ingredientId,name:item.name,group:item.group,unit:item.unit,quantity,kcalRate:item.unit==="pcs"?item.kcalPerUnit:item.kcalPer100/100};
+    });
+    return {name:recipe.name,sourceType:recipe.sourceType,baseKcal:recipe.calorieMode==="manual"?recipe.manualKcal:ingredients.reduce((n,i)=>n+i.quantity*i.kcalRate,0),ingredients,steps:[...recipe.steps],incompleteIngredients:!ingredients.length,opaquePackaged:!!recipe.opaquePackaged,calorieMode:recipe.calorieMode||"ingredients"};
   }
   function drinkSnapshot(config) {
     const ingredients=[],add=(id,quantity)=>{if(quantity){const i=foodById(id);ingredients.push({ingredientId:id,name:i.name,unit:i.unit,group:i.group,quantity,kcalRate:i.kcalPer100/100});}};
@@ -574,46 +498,18 @@
   function ensureDay(s,date) {
     if(!s.days[date])s.days[date]={date,goalKcal:date<todayDate()?null:s.profile.dailyKcalGoal,planEntries:[],actualEntries:[]};return s.days[date];
   }
-  function makeEntry(recipe,date,mealType,portions=1,origin="manual") {
-    return {id:uid("pe_"),date,mealType,recipeId:recipe.id,snapshot:recipeSnapshot(recipe),portions,drinkConfig:null,locked:false,origin,createdAt:new Date().toISOString()};
+  function makeEntry(recipe,date,mealType,portions=1,origin="manual",sourceFood=allFood()) {
+    return {id:uid("pe_"),date,mealType,recipeId:recipe.id,snapshot:recipeSnapshot(recipe,sourceFood),portions,drinkConfig:null,locked:false,origin,createdAt:new Date().toISOString()};
   }
   const linked=(day,entry)=>day.actualEntries.some(a=>a.sourcePlanEntryId===entry.id);
   const conflicts=(entry,settings)=>entry.snapshot.ingredients.filter(i=>settings.excludedIngredientIds.includes(i.ingredientId)).map(i=>i.name);
   function eligible(recipe,settings,automatic=true) {
-    return (!automatic||recipe.suitableForAuto)&&recipe.prepMinutes<=settings.maxPrepMinutes&&(settings.allowReadyMeals||recipe.sourceType!=="ready")&&!recipe.ingredients.some(i=>settings.excludedIngredientIds.includes(i.ingredientId));
+    return !!recipe&&(!automatic||recipe.suitableForAuto)&&recipe.prepMinutes<=settings.maxPrepMinutes&&(settings.allowReadyMeals||recipe.sourceType!=="ready")&&!recipe.ingredients.some(i=>settings.excludedIngredientIds.includes(i.ingredientId));
   }
-  function validatePlanDay(day) {
-    const errors=[],ids=new Set(),counts={};
-    if(day.planEntries.length>203)errors.push("Слишком много записей в дне.");
-    for(const e of day.planEntries) {
-      if(!isRecord(e)||typeof e.id!=="string"||!e.id||ids.has(e.id)||e.date!==day.date||!Object.keys(MEALS).includes(e.mealType)||typeof e.locked!=="boolean"||!["manual","generated","copied"].includes(e.origin)||!Number.isFinite(Date.parse(e.createdAt))) {errors.push("Некорректная запись плана "+day.date);continue;}
-      ids.add(e.id);counts[e.mealType]=(counts[e.mealType]||0)+1;
-      if((MAIN.includes(e.mealType)&&counts[e.mealType]>1)||(!MAIN.includes(e.mealType)&&(e.locked||counts[e.mealType]>100)))errors.push("Неверное количество слотов "+day.date);
-      const snap=e.snapshot;
-      if(!isRecord(snap)||typeof snap.name!=="string"||!snap.name||snap.name.length>80||!Number.isFinite(snap.baseKcal)||snap.baseKcal<0||!Array.isArray(snap.ingredients)||!Array.isArray(snap.steps)||snap.steps.some(x=>typeof x!=="string")||typeof snap.incompleteIngredients!=="boolean") {errors.push("Некорректный снимок рецепта.");continue;}
-      const bad=snap.ingredients.some(i=>!isRecord(i)||!foodById(i.ingredientId)||foodById(i.ingredientId).unit!==i.unit||typeof i.name!=="string"||typeof i.group!=="string"||!Number.isFinite(i.quantity)||i.quantity<=0||!Number.isFinite(i.kcalRate)||i.kcalRate<0);
-      if(bad){errors.push("Некорректные ингредиенты снимка.");continue;}
-      if(Math.abs(snap.baseKcal-snap.ingredients.reduce((n,i)=>n+i.quantity*i.kcalRate,0))>1e-7)errors.push("Калории снимка не совпадают с составом.");
-      if(e.mealType==="drink") {
-        const c=e.drinkConfig;
-        if(e.recipeId!==null||e.portions!==1||!isRecord(c)||!DRINKS[c.templateId]||parseNumber(c.volumeMl,50,1000,10).error||parseNumber(c.milkMl,0,500).error||parseNumber(c.sugarG,0,50).error||c.milkMl>c.volumeMl||(c.templateId==="water"&&(c.milkMl!==0||c.sugarG!==0)))errors.push("Некорректный напиток.");
-        else if(JSON.stringify(drinkSnapshot(c))!==JSON.stringify(snap))errors.push("Напиток не соответствует составу.");
-      } else if(!recipeById(e.recipeId)||!recipeById(e.recipeId).mealTypes.includes(e.mealType)||e.drinkConfig!==null||parseNumber(e.portions,.25,4,.25).error)errors.push("Некорректное блюдо или порция.");
-    }return errors;
-  }
-  function validateShopping(s) {
-    const errors=[];
-    if(isRecord(s.pantry)&&Object.keys(s.pantry).some(id=>!foodById(id)))errors.push("Неизвестный продукт в запасах.");
-    if(isRecord(s.shoppingMarks))Object.entries(s.shoppingMarks).forEach(([key,m])=>{
-      const [scope,start,end,id,...rest]=key.split(":");
-      if(rest.length||!["week","tomorrow"].includes(scope)||!validDate(start)||!validDate(end)||start>end||!foodById(id)||!isRecord(m)||m.ingredientId!==id||m.unit!==foodById(id)?.unit||typeof m.checked!=="boolean"||!Number.isFinite(m.requiredQuantity)||m.requiredQuantity<=0)errors.push("Некорректная отметка покупки.");
-    });
-    const allIds=new Set();Object.values(s.days||{}).forEach(d=>(Array.isArray(d?.planEntries)?d.planEntries:[]).forEach(e=>{if(allIds.has(e.id))errors.push("Повторный ID плана.");allIds.add(e.id);}));
-    if(Array.isArray(s.settings.favoriteRecipeIds)&&(s.settings.favoriteRecipeIds.some(id=>!recipeById(id))||new Set(s.settings.favoriteRecipeIds).size!==s.settings.favoriteRecipeIds.length))errors.push("Некорректное избранное.");
-    return errors;
-  }
+  function validatePlanDay(day) { return validateRelations({...state,days:{[day.date]:day},shoppingMarks:{}}); }
+  function validateShopping(s) { return validateRelations(s); }
   function aggregateShopping(s,start,end) {
-    const items={};Object.values(s.days).filter(d=>d.date>=start&&d.date<=end).forEach(d=>d.planEntries.forEach(e=>e.snapshot.ingredients.forEach(i=>{
+    const items=Object.create(null);Object.values(s.days).filter(d=>d.date>=start&&d.date<=end).forEach(d=>d.planEntries.forEach(e=>e.snapshot.ingredients.forEach(i=>{
       if(!items[i.ingredientId])items[i.ingredientId]={...i,quantity:0};items[i.ingredientId].quantity+=i.quantity*e.portions;
     })));return Object.values(items).sort((a,b)=>a.group.localeCompare(b.group,"ru")||a.name.localeCompare(b.name,"ru"));
   }
@@ -640,7 +536,7 @@
       const list=items.filter(i=>!!s.pantry[i.ingredientId]===home).sort((a,b)=>Number(isBought(s,p,a))-Number(isBought(s,p,b))||a.group.localeCompare(b.group,"ru")||a.name.localeCompare(b.name,"ru"));
       let group="";for(const i of list){if(i.group!==group){group=i.group;lines.push(group);}lines.push((home?"[дома]":isBought(s,p,i)?"[x]":"[ ]")+" "+i.name+" — "+quantityLabel(i));}
       if(!list.length)lines.push(home?"Нет отмеченных продуктов.":"Нет продуктов для покупки.");lines.push("");
-    }return lines.join("\n");
+    }const unclear=unclearShopping(s,p.start,p.end);if(unclear.length){lines.push("Уточнить состав");unclear.forEach(i=>lines.push(i.name+" — "+format(i.portions,2)+" порц."));}return lines.join("\n");
   }
   function actionButton(text,handler,secondary=true) {
     const b=node("button",text,"button small "+(secondary?"secondary":"primary"));b.type="button";b.addEventListener("click",handler);return b;
@@ -677,7 +573,7 @@
   }
   function showRecipe(snapshot,portions=1) {
     const dialog=modal(snapshot.name),list=node("ul");dialog.append(node("p",format(snapshot.baseKcal*portions)+" ккал · "+format(portions,2)+" порц."));
-    snapshot.ingredients.forEach(i=>list.append(node("li",i.name+" — "+format(i.quantity*portions,2)+" "+(i.unit==="ml"?"мл":"г"))));dialog.append(list);
+    snapshot.ingredients.forEach(i=>list.append(node("li",i.name+" — "+format(i.quantity*portions,2)+" "+(i.unit==="ml"?"мл":i.unit==="pcs"?"шт.":"г"))));dialog.append(list);
     const steps=node("ol");snapshot.steps.forEach(step=>steps.append(node("li",step)));dialog.append(steps);
   }
   function toggleFavorite(id) {
@@ -692,15 +588,17 @@
     parent.append(filters,flags);const list=node("div",undefined,"recipe-grid");parent.append(list);
     function refresh() {
       f.query=search.value;f.meal=meal.value;f.minutes=minutes.value;if(!context)catalogFilters={...f};list.replaceChildren();
-      const recipes=(alternatives||RECIPES).filter(r=>(!f.query||r.name.toLocaleLowerCase("ru").includes(f.query.toLocaleLowerCase("ru")))&&(!f.meal||r.mealTypes.includes(f.meal))&&(!f.minutes||r.prepMinutes<=+f.minutes)&&(!f.noCook||r.noCook)&&!f.mine&&(!f.favorites||state.settings.favoriteRecipeIds.includes(r.id))&&(f.excluded||!r.ingredients.some(i=>state.settings.excludedIngredientIds.includes(i.ingredientId))));
-      if(!recipes.length)list.append(node("p",f.mine?"Свои блюда появятся на шаге 3.":"Подходящих блюд нет. Попробуйте изменить фильтры.","notice"));
+      const recipes=(alternatives||allRecipes()).filter(r=>(!f.query||r.name.toLocaleLowerCase("ru").includes(f.query.toLocaleLowerCase("ru")))&&(!f.meal||r.mealTypes.includes(f.meal))&&(!f.minutes||r.prepMinutes<=+f.minutes)&&(!f.noCook||r.noCook||r.prepMinutes===0)&&(!f.mine||r.id.startsWith("cr_"))&&(!f.favorites||state.settings.favoriteRecipeIds.includes(r.id))&&(f.excluded||!r.ingredients.some(i=>state.settings.excludedIngredientIds.includes(i.ingredientId))));
+      if(!recipes.length)list.append(node("p","Подходящих блюд нет. Попробуйте изменить фильтры или создайте своё.","notice"));
       recipes.forEach(r=>{
         const snap=recipeSnapshot(r),blocked=conflicts({snapshot:snap},state.settings),card=node("article",undefined,"card recipe-card");
         card.append(node("h3",r.name),node("p",r.prepMinutes+" мин · "+format(snap.baseKcal)+" ккал · 1 порция"));
         if(blocked.length)card.append(node("p","Исключено: "+blocked.join(", "),"warning"));
         const row=node("div",undefined,"button-row");
         row.append(actionButton("Рецепт",()=>showRecipe(snap)),actionButton(state.settings.favoriteRecipeIds.includes(r.id)?"★ В избранном":"☆ Избранное",()=>{toggleFavorite(r.id);refresh();}));
-        const add=actionButton(context?"Выбрать":"В план",()=>choosePortion(r,context),false);add.disabled=blocked.length>0;row.append(add);card.append(row);list.append(card);
+        const add=actionButton(context?"Выбрать":"В план",()=>choosePortion(r,context),false);add.disabled=blocked.length>0;row.append(add);
+        if(!context){row.append(actionButton(r.id.startsWith("cr_")?"Изменить":"Изменить копию",()=>editRecipe(r)));if(r.id.startsWith("cr_"))row.append(actionButton("Удалить",()=>deleteRecipe(r)));}
+        if(snap.incompleteIngredients||snap.opaquePackaged)card.append(node("p",snap.opaquePackaged?"Состав и ограничения проверь по упаковке":"Состав не указан","warning"));if(r.note)card.append(node("p",r.note,"subtle"));card.append(row);list.append(card);
       });
     }
     search.addEventListener("input",refresh);meal.addEventListener("change",refresh);minutes.addEventListener("change",refresh);refresh();
@@ -708,13 +606,14 @@
   function openCatalog(date,mealType,existing=null) {
     const dialog=modal(existing?"Заменить блюдо":"Выбрать блюдо");let alternatives=null;
     if(existing) {
-      alternatives=RECIPES.filter(r=>r.id!==existing.recipeId&&r.mealTypes.includes(mealType)&&eligible(r,state.settings)).sort((a,b)=>Math.abs(recipeSnapshot(a).baseKcal*existing.portions-rawKcal(existing))-Math.abs(recipeSnapshot(b).baseKcal*existing.portions-rawKcal(existing))).slice(0,5);
+      alternatives=allRecipes().filter(r=>r.id!==existing.recipeId&&r.mealTypes.includes(mealType)&&eligible(r,state.settings,false)).sort((a,b)=>Math.abs(recipeSnapshot(a).baseKcal*existing.portions-rawKcal(existing))-Math.abs(recipeSnapshot(b).baseKcal*existing.portions-rawKcal(existing))).slice(0,5);
       dialog.append(node("p","До пяти подходящих альтернатив по калорийности. Выбор сохраняется после подтверждения порции."));
     }
     catalogUI(dialog,{date,mealType,existing},alternatives);
   }
   function savePlannedEntry(entry,existingId=null) {
     const next=clone(state),day=ensureDay(next,entry.date);
+    const removed=day.planEntries.filter(e=>(existingId&&e.id===existingId||MAIN.includes(entry.mealType)&&e.mealType===entry.mealType)&&e.id!==entry.id).map(e=>e.id);detachPlanLinks(day,removed);
     if(existingId)day.planEntries=day.planEntries.filter(e=>e.id!==existingId);
     if(MAIN.includes(entry.mealType))day.planEntries=day.planEntries.filter(e=>e.mealType!==entry.mealType);
     if(!MAIN.includes(entry.mealType)&&day.planEntries.filter(e=>e.mealType===entry.mealType).length>=100){announce("В день можно добавить до 100 записей этого вида.");return false;}
@@ -724,6 +623,7 @@
     const dialog=modal("Порция · "+recipe.name,true),form=node("form"),date=inputField(form,"Дата","date",context?.date||selectedDay);
     const meal=selectField(form,"Приём пищи",Object.fromEntries(recipe.mealTypes.map(k=>[k,MEALS[k]])),context?.mealType||recipe.mealTypes[0]),quantity=inputField(form,"Порций · от 0,25 до 4, шаг 0,25","decimal",context?.existing?.portions||1);
     if(context?.existing){date.disabled=true;meal.disabled=true;}
+    let packageConfirmed=null;if(recipeSnapshot(recipe).incompleteIngredients||recipe.opaquePackaged){form.append(node("p","Состав и ограничения проверь по упаковке.","warning"));packageConfirmed=node("input");packageConfirmed.type="checkbox";const label=node("label",undefined,"check-line");label.append(packageConfirmed,node("span","Я проверила состав для этого добавления"));form.append(label);}
     const preview=node("p",undefined,"notice");form.append(preview);
     const update=()=>{const parsed=parseNumber(quantity.value,.25,4,.25);preview.textContent=parsed.error||format(recipeSnapshot(recipe).baseKcal*parsed.value)+" ккал";};quantity.addEventListener("input",update);update();
     if(context?.existing?.locked)form.append(node("p","Ручная замена снимет отметку «Сохранить при подборе».","warning"));
@@ -732,6 +632,7 @@
     form.addEventListener("submit",e=>{
       e.preventDefault();const q=parseNumber(quantity.value,.25,4,.25);
       if(!validDate(date.value)||q.error){errorIn(form,q.error||"Выберите корректную дату.");return;}
+      if(packageConfirmed&&!packageConfirmed.checked){errorIn(form,"Подтвердите проверку состава.");return;}
       if(conflicts({snapshot:recipeSnapshot(recipe)},state.settings).length){errorIn(form,"Блюдо содержит исключённые продукты.");return;}
       const existing=state.days[date.value]?.planEntries.find(e=>e.mealType===meal.value),entry=makeEntry(recipe,date.value,meal.value,q.value);
       const finish=()=>{if(savePlannedEntry(entry,context?.existing?.id)){closeFood(true);announce("Блюдо добавлено в план.");}};
@@ -782,9 +683,12 @@
     if(entry.mealType!=="drink")actions.append(actionButton("Заменить",()=>openCatalog(entry.date,entry.mealType,entry)));
     actions.append(actionButton("Копировать",()=>copyEntryDialog(entry)),
       actionButton("Удалить",()=>confirmAction("Удалить запись?",entry.snapshot.name+" · "+prettyDate(entry.date),()=>{
-        const next=clone(state);next.days[entry.date].planEntries=next.days[entry.date].planEntries.filter(e=>e.id!==entry.id);commit(next);
+        const next=clone(state);detachPlanLinks(next.days[entry.date],[entry.id]);next.days[entry.date].planEntries=next.days[entry.date].planEntries.filter(e=>e.id!==entry.id);commit(next);
       })));
-    const eaten=actionButton("Съедено · шаг 3",()=>{});eaten.disabled=true;actions.append(eaten);dialog.append(actions);
+    const fact=state.days[entry.date]?.actualEntries.find(a=>a.sourcePlanEntryId===entry.id);
+    const eaten=actionButton(fact?"Изменить съеденное":"Съедено",()=>editActual(entry.date,entry,fact));eaten.disabled=entry.date>todayDate();actions.append(eaten);
+    if(fact)actions.append(actionButton("Не съела",()=>removeActual(fact)));dialog.append(actions);
+    const currentRecipe=recipeById(entry.recipeId);if(currentRecipe&&!linked(state.days[entry.date],entry))dialog.append(actionButton("Обновить из рецепта",()=>updatePlanRecipe(entry,currentRecipe)));
     const list=node("ul");
     entry.snapshot.ingredients.forEach(i=>list.append(node("li",i.name+" — "+format(i.quantity*entry.portions,2)+" "+(i.unit==="ml"?"мл":i.unit==="pcs"?"шт.":"г"))));
     if(list.childElementCount)dialog.append(node("h3","Ингредиенты"),list);
@@ -812,6 +716,7 @@
     }
     card.append(row);
     if(conflicts(entry,state.settings).length)card.append(node("span","Проверь ограничения","entry-conflict"));
+    const eaten=day.actualEntries.find(a=>a.sourcePlanEntryId===entry.id);if(eaten)card.append(node("span","✓ Съедено: "+format(eaten.portions,2)+" порц.","eaten-status"));
     return card;
   }
   function openDayDrinks(date) {
@@ -827,9 +732,10 @@
       actions.append(actionButton("Изменить",()=>editDrink(date,entry),false),
         actionButton("Копировать",()=>copyEntryDialog(entry)),
         actionButton("Удалить",()=>confirmAction("Удалить напиток?",entry.snapshot.name+" · "+prettyDate(date),()=>{
-          const next=clone(state);next.days[date].planEntries=next.days[date].planEntries.filter(e=>e.id!==entry.id);
+          const next=clone(state);detachPlanLinks(next.days[date],[entry.id]);next.days[date].planEntries=next.days[date].planEntries.filter(e=>e.id!==entry.id);
           if(commit(next))openDayDrinks(date);
         })));
+      const actual=state.days[date].actualEntries.find(a=>a.sourcePlanEntryId===entry.id);const eaten=actionButton(actual?"Изменить съеденное":"Съедено",()=>editActual(date,entry,actual));eaten.disabled=date>todayDate();actions.append(eaten);if(actual)item.append(node("p","✓ Выпито: "+actual.drinkConfig.volumeMl+" мл","eaten-status"));
       item.append(actions);list.append(item);
     });
     dialog.append(list,actionButton("Добавить напиток",()=>editDrink(date),false));
@@ -849,8 +755,8 @@
   }
   let weekRowObserver=null;
   function alignWeekRows(grid) {
-    let scheduled=false,lastWidth=-1;
-    const selectors=[".day-card-header",...MAIN.map(meal=>'[data-meal-type="'+meal+'"]'),'[data-meal-type="snack"]'];
+    let scheduled=false;const observedSizes=new WeakMap();
+    const selectors=[".day-card-header",".drink-summary",".fact-summary",...MAIN.map(meal=>'[data-meal-type="'+meal+'"]'),'[data-meal-type="snack"]'];
     const align=()=>{
       scheduled=false;
       if(!grid.isConnected)return;
@@ -862,10 +768,15 @@
     };
     const schedule=()=>{if(!scheduled){scheduled=true;requestAnimationFrame(align);}};
     weekRowObserver=new ResizeObserver(entries=>{
-      const width=entries[0].contentRect.width;
-      if(width!==lastWidth){lastWidth=width;schedule();}
+      let changed=false;
+      for(const entry of entries){
+        const size=entry.target===grid?String(entry.contentRect.width):entry.contentRect.width+":"+entry.contentRect.height;
+        if(observedSizes.get(entry.target)!==size){observedSizes.set(entry.target,size);changed=true;}
+      }
+      if(changed)schedule();
     });
     weekRowObserver.observe(grid);
+    grid.querySelectorAll(".entry-open,.day-heading,.day-total,.extra-slot > summary").forEach(element=>weekRowObserver.observe(element));
     grid.addEventListener("toggle",schedule,true);
     document.fonts.ready.then(schedule);
     schedule();
@@ -937,7 +848,7 @@
         section.append(actionButton(mealType==="drink"?"Добавить напиток":"Добавить перекус",()=>mealType==="drink"?editDrink(date):openCatalog(date,mealType)));card.append(section);
       }
       card.append(drinksSummary(date,day));
-      card.append(node("p","Фактическое питание: журнал появится на шаге 3.","subtle"));grid.append(card);
+      const fact=actionButton(date>todayDate()?"Факт доступен с этой даты":"Съедено: "+format(actualTotal(day))+" ккал · "+day.actualEntries.length,()=>openJournal(date));fact.classList.add("fact-summary");fact.disabled=date>todayDate();card.append(fact);grid.append(card);
     });parent.append(grid);alignWeekRows(grid);
   }
   function renderShopping(parent) {
@@ -945,7 +856,9 @@
     for(const [scope,label] of [["tomorrow","На завтра"],["week","На неделю"]]){const b=actionButton(label,()=>{shoppingScope=scope;render();},scope!==shoppingScope);b.setAttribute("aria-pressed",String(scope===shoppingScope));tabs.append(b);}
     tabs.append(actionButton("Продукты дома",pantryDialog));parent.append(tabs,node("h2",p.label),node("p","Количества для покупки округлены вверх.","subtle"));
     const items=aggregateShopping(state,p.start,p.end);
-    if(!items.length)parent.append(node("p","В этом периоде пока нет продуктов: добавьте блюда или напитки в план.","notice"));
+    const unclear=unclearShopping(state,p.start,p.end);if(unclear.length){const box=node("section",undefined,"card");box.append(node("h2","Уточнить состав"));unclear.forEach(i=>box.append(actionButton(i.name+" · "+format(i.portions,2)+" порц.",()=>showRecipe(i.snapshot))));parent.append(box);}
+    if(p.scope==="tomorrow")parent.append(actionButton("Меню на завтра",()=>{selectedWeek=mondayOf(p.start);selectedDay=p.start;activeTab="week";render();}));
+    if(!items.length&&!unclear.length)parent.append(node("p","В этом периоде пока нет продуктов: добавьте блюда или напитки в план.","notice"));
     else if(items.every(i=>state.pantry[i.ingredientId]))parent.append(node("p","Всё отмечено дома. Проверьте, достаточно ли продуктов.","notice"));
     for(const home of [false,true]) {
       const container=home?node("details",undefined,"card shopping-home"):node("section",undefined,"card shopping-list");
@@ -968,7 +881,7 @@
   function pantryDialog() {
     const dialog=modal("Продукты дома");dialog.append(node("p","Отметка означает «есть дома; количество не проверено». Продукты не списываются автоматически."));
     const search=inputField(dialog,"Найти продукт","search"),list=node("div");dialog.append(list);
-    const refresh=()=>{list.replaceChildren();FOOD.filter(i=>i.name.toLocaleLowerCase("ru").includes(search.value.toLocaleLowerCase("ru"))).forEach(i=>list.append(checkField(i.name,!!state.pantry[i.id],v=>{const next=clone(state);next.pantry[i.id]=v;commit(next);})));}
+    const refresh=()=>{list.replaceChildren();allFood().filter(i=>!i.archived||state.pantry[i.id]).filter(i=>i.name.toLocaleLowerCase("ru").includes(search.value.toLocaleLowerCase("ru"))).forEach(i=>list.append(checkField(i.name,!!state.pantry[i.id],v=>{const next=clone(state);next.pantry[i.id]=v;commit(next);})));}
     search.addEventListener("input",refresh);refresh();
   }
   function renderFoodPanel() {
@@ -976,7 +889,7 @@
     const parent=$("panelContent");parent.replaceChildren();
     $("sectionEyebrow").textContent={week:"Своя еда. Свой ритм.",recipes:"Простая еда на каждый день",shopping:"Меньше забытых продуктов"}[activeTab];
     $("sectionTitle").textContent={week:"Ваше меню на неделю",recipes:"Ваши блюда",shopping:"Покупки"}[activeTab];$("weekBar").hidden=activeTab==="recipes";
-    if(activeTab==="week")renderWeek(parent);else if(activeTab==="recipes"){parent.append(node("p","30 простых блюд. Свои рецепты можно будет добавить на шаге 3.","subtle"));catalogUI(parent);}else renderShopping(parent);return true;
+    if(activeTab==="week")renderWeek(parent);else if(activeTab==="recipes"){parent.append(actionButton("Создать своё блюдо",()=>editRecipe(),false),node("p","Выберите из готовых или сохраните свой рецепт.","subtle"));catalogUI(parent);}else renderShopping(parent);return true;
   }
   const clonePlanEntry=(entry,date)=>({...clone(entry),id:uid("pe_"),date,locked:false,origin:"copied",createdAt:new Date().toISOString()});
   function copyEntryDialog(entry) {
@@ -988,7 +901,7 @@
       const next=clone(state),messages=[];
       for(const date of dates) {
         if(conflicts(entry,next.settings).length){messages.push(date+": исключены "+conflicts(entry,next.settings).join(", "));continue;}
-        if(entry.recipeId&&!eligible(recipeById(entry.recipeId),next.settings,false)){messages.push(date+": время или готовая еда не соответствует настройкам");continue;}
+        const restriction=copyRestriction(entry,next);if(restriction){messages.push(date+": "+restriction);continue;}
         const day=ensureDay(next,date),existing=day.planEntries.find(e=>e.mealType===entry.mealType);
         if(MAIN.includes(entry.mealType)&&existing&&(existing.locked||linked(day,existing))){messages.push(date+": защищённая запись сохранена");continue;}
         if(!MAIN.includes(entry.mealType)&&day.planEntries.filter(e=>e.mealType===entry.mealType).length>=100){messages.push(date+": достигнут предел записей");continue;}
@@ -1005,7 +918,7 @@
       const target=ensureDay(next,date),protectedEntries=target.planEntries.filter(e=>e.locked||linked(target,e));
       preserved+=protectedEntries.length;replaced+=target.planEntries.length-protectedEntries.length;target.planEntries=protectedEntries;
       sourceDay.planEntries.forEach(entry=>{
-        if(conflicts(entry,s.settings).length||(entry.recipeId&&!eligible(recipeById(entry.recipeId),s.settings,false))){warnings.push(date+": пропущено "+entry.snapshot.name+" — ограничения профиля");return;}
+        const restriction=copyRestriction(entry,s);if(restriction){warnings.push(date+": пропущено "+entry.snapshot.name+" — "+restriction);return;}
         if(MAIN.includes(entry.mealType)&&target.planEntries.some(e=>e.mealType===entry.mealType))return;
         if(!MAIN.includes(entry.mealType)&&target.planEntries.filter(e=>e.mealType===entry.mealType).length>=100)return;
         target.planEntries.push(clonePlanEntry(entry,date));added++;
@@ -1038,13 +951,15 @@
       const card=node("section",undefined,"card");card.append(node("h3",prettyDate(day.date,true)),node("p","План: "+format(dayTotal(day))+" ккал · цель "+(day.goalKcal??"не задана")));
       const list=node("ul");day.planEntries.forEach(e=>list.append(node("li",MEALS[e.mealType]+": "+e.snapshot.name+" · "+format(e.portions,2)+" порц. · "+format(rawKcal(e))+" ккал")));card.append(list);preview.append(card);
     });dialog.append(preview);
-    const actions=node("div",undefined,"dialog-actions");actions.append(actionButton("Применить",()=>{if(commit(next)){closeFood(true);announce("Меню сохранено.");}},false),actionButton("Отмена",()=>closeFood(true)));
+    const savedIds=new Set(Object.values(state.days).flatMap(d=>d.planEntries.map(e=>e.id)));
+    let packageCheck=null;if(Object.values(next.days).some(d=>d.planEntries.some(e=>!savedIds.has(e.id)&&e.mealType!=="drink"&&(e.snapshot.opaquePackaged||e.snapshot.incompleteIngredients)))){const label=checkField("Я проверила состав и ограничения по упаковке для этого копирования",false,()=>{});packageCheck=label.querySelector("input");dialog.append(node("p","В копии есть блюда с неизвестным составом. Состав и ограничения проверь по упаковке.","warning"),label);}
+    const actions=node("div",undefined,"dialog-actions");actions.append(actionButton("Применить",()=>{if(packageCheck&&!packageCheck.checked){errorIn(dialog,"Подтвердите проверку состава.");return;}if(commit(next)){closeFood(true);announce(storageError?"Меню принято в память, но не сохранено. Скачайте текущие данные.":"Меню сохранено.");}},false),actionButton("Отмена",()=>closeFood(true)));
     if(extra)actions.append(actionButton("Ещё вариант",extra));dialog.append(actions);
   }
   const yieldBrowser=()=>new Promise(resolve=>document.hidden?setTimeout(resolve,0):requestAnimationFrame(resolve));
   async function generatePlan(s,week,mode,seed,cancel=()=>false,metrics={}) {
-    const settings=s.settings,rngBase=seed>>>0,dates=dayDates(week),candidates={};
-    for(const meal of [...MAIN,"snack"])candidates[meal]=RECIPES.filter(r=>r.mealTypes.includes(meal)&&eligible(r,settings)&&recipeSnapshot(r).baseKcal>0);
+    const settings=s.settings,rngBase=seed>>>0,dates=dayDates(week),candidates={},sourceFood=[...FOOD,...s.customIngredients];
+    for(const meal of [...MAIN,"snack"])candidates[meal]=[...RECIPES,...s.customRecipes].filter(r=>r.mealTypes.includes(meal)&&eligible(r,settings)&&recipeSnapshot(r,sourceFood).baseKcal>0);
     const history=new Map();
     Object.values(s.days).filter(d=>d.date>=addCalendarDays(week,-14)&&d.date<week).sort((a,b)=>a.date.localeCompare(b.date)).forEach(d=>d.planEntries.forEach(e=>{if(e.recipeId)history.set(e.recipeId,d.date);}));
     let best=null;metrics.attempts=0;metrics.maxFragmentMs=0;metrics.yields=0;
@@ -1075,7 +990,7 @@
             }
             if(!pool.length){warnings.push(date+" · "+MEALS[meal]+": подходящих вариантов нет");continue;}
             let options=pool.map(recipe=>{
-              const kcal=recipeSnapshot(recipe).baseKcal,portions=budget===null?1:[.75,1,1.25,1.5,1.75,2].reduce((best,p)=>Math.abs(kcal*p-budget)<Math.abs(kcal*best-budget)?p:best,.75);
+              const kcal=recipeSnapshot(recipe,sourceFood).baseKcal,portions=budget===null?1:[.75,1,1.25,1.5,1.75,2].reduce((best,p)=>Math.abs(kcal*p-budget)<Math.abs(kcal*best-budget)?p:best,.75);
               return {recipe,portions,error:budget===null?0:Math.abs(kcal*portions-budget)};
             });
             if(budget!==null) {
@@ -1084,7 +999,7 @@
             } else {
               options.sort((a,b)=>(history.get(a.recipe.id)||"").localeCompare(history.get(b.recipe.id)||"")||(usage.get(a.recipe.id)||0)-(usage.get(b.recipe.id)||0));options=options.slice(0,3);
             }
-            const chosen=options[Math.floor(rng()*options.length)];day.planEntries.push(makeEntry(chosen.recipe,date,meal,chosen.portions,"generated"));
+            const chosen=options[Math.floor(rng()*options.length)];day.planEntries.push(makeEntry(chosen.recipe,date,meal,chosen.portions,"generated",sourceFood));
             if(MAIN.includes(meal))usage.set(chosen.recipe.id,(usage.get(chosen.recipe.id)||0)+1);
             if(performance.now()-begin>8){metrics.maxFragmentMs=Math.max(metrics.maxFragmentMs,performance.now()-begin);await yieldBrowser();metrics.yields++;begin=performance.now();}
           }
@@ -1117,5 +1032,497 @@
     window.FoodPlanner=Object.freeze({FOOD,RECIPES,recipeSnapshot,drinkSnapshot,rawKcal,aggregateShopping,shoppingText,shoppingPeriod,quantityLabel,generatePlan,copyWeekPlan,validatePlanDay,validateShopping,dayDates,seeded});
   }
 
+
+  // Step 3. Two-pass whitelist validation: structural descriptors, then relations.
+  const str=(maxLength,minLength=0)=>({type:"string",maxLength,minLength});
+  const num=(min,max,step)=>({type:"number",min,max,step});
+  const en=values=>({type:"string",enum:values});
+  const bool={type:"boolean"},dateType={type:"localDate"},stamp={type:"isoTimestamp"};
+  const nullable=s=>({...s,nullable:true}),optional=s=>({...s,optional:true});
+  const arr=(items,max=10000)=>({type:"array",items,maxLength:max});
+  const obj=properties=>({type:"object",properties});
+  const idType={...str(120,1),pattern:/^(?!(?:__proto__|prototype|constructor)$)[A-Za-z0-9_-]+$/};
+  const dict=(values,keyType)=>({type:"dictionary",values,keyType,maxLength:10000});
+  const ingredientLine=obj({ingredientId:idType,quantity:num(.000001,100000)});
+  const customIngredientSchema=obj({id:idType,name:str(60,1),group:str(60,1),unit:en(["g","ml","pcs"]),kcalPer100:nullable(num(0,1000)),kcalPerUnit:nullable(num(0,1000)),archived:optional(bool)});
+  const customRecipeSchema=obj({id:idType,name:str(80,1),mealTypes:arr(en(["breakfast","lunch","dinner","snack"]),4),prepMinutes:num(0,240,1),sourceType:en(["homemade","ready"]),ingredients:arr(ingredientLine,40),calorieMode:en(["ingredients","manual"]),manualKcal:nullable(num(0,3000)),steps:arr(str(1000,1),10),note:str(1000),suitableForAuto:bool,opaquePackaged:optional(bool)});
+  const SNAPSHOT_SCHEMA=obj({name:str(80,1),sourceType:en(["homemade","ready"]),baseKcal:num(0,Number.MAX_SAFE_INTEGER),ingredients:arr(obj({ingredientId:idType,name:str(60,1),group:str(60,1),unit:en(["g","ml","pcs"]),quantity:num(.000001,100000),kcalRate:num(0,1000)}),40),steps:arr(str(1000,1),10),incompleteIngredients:bool,opaquePackaged:optional(bool),calorieMode:optional(en(["ingredients","manual"]))});
+  const drinkSchema=nullable(obj({templateId:en(Object.keys(DRINKS)),volumeMl:num(50,1000,10),milkMl:num(0,500,1),sugarG:num(0,50,1)}));
+  const planSchema=obj({id:idType,date:dateType,mealType:en(Object.keys(MEALS)),recipeId:nullable(idType),snapshot:SNAPSHOT_SCHEMA,portions:num(.25,4,.25),drinkConfig:drinkSchema,locked:bool,origin:en(["manual","generated","copied"]),createdAt:stamp});
+  const actualSchema=obj({id:idType,date:dateType,mealType:en(Object.keys(MEALS)),time:nullable({...str(5),pattern:/^([01]\d|2[0-3]):[0-5]\d$/}),sourcePlanEntryId:nullable(idType),snapshot:SNAPSHOT_SCHEMA,portions:num(.25,4,.25),drinkConfig:drinkSchema,totalKcalRaw:num(0,Number.MAX_SAFE_INTEGER),note:str(1000),createdAt:stamp});
+  const STATE_SCHEMA=obj({
+    schemaVersion:{type:"number",enum:[1]},updatedAt:stamp,
+    profile:obj({completed:bool,age:nullable(num(18,100,1)),heightCm:nullable(num(120,230,.1)),baselineWeightKg:nullable(num(30,300,.1)),goalWeightKg:nullable(num(30,300,.1)),formulaSex:en(["female","male","none"]),activityFactor:nullable({type:"number",enum:[1.2,1.375,1.55,1.725]}),pregnancyStatus:en(["no","yes","unknown"]),goalMode:en(["calculated","manual","none"]),lossPreference:{type:"number",enum:[0,.25,.5]},dailyKcalGoal:nullable(num(1000,5000,1)),manualGoalConfirmed:bool}),
+    settings:obj({maxPrepMinutes:{type:"number",enum:[15,20,30]},allowReadyMeals:bool,allowRepeats:bool,autoSnack:bool,tipsEnabled:bool,animationsEnabled:bool,excludedIngredientIds:arr(idType),favoriteRecipeIds:arr(idType)}),
+    customIngredients:arr(customIngredientSchema),customRecipes:arr(customRecipeSchema),
+    pantry:dict(bool,idType),days:dict(obj({date:dateType,goalKcal:nullable(num(1000,5000,1)),planEntries:arr(planSchema,203),actualEntries:arr(actualSchema,Infinity)}),dateType),
+    shoppingMarks:dict(obj({ingredientId:idType,unit:en(["g","ml","pcs"]),checked:bool,requiredQuantity:num(.000001,100000000)}),str(200,1)),
+    weightLog:arr(obj({id:idType,date:dateType,weightKg:num(30,300,.1),note:str(300)})),
+    lastGeneration:nullable(obj({weekStart:dateType,seed:num(0,4294967295,1),algorithmVersion:{type:"number",enum:[1]}}))
+  });
+  function checkStructure(value,schema,path="state") {
+    const errors=[],bad=(p,message)=>{if(errors.length<30)errors.push(p+": "+message);};
+    function safe(v,p,depth=0){
+      if(depth>30){bad(p,"слишком глубокая структура");return;}
+      if(v&&typeof v==="object")for(const k of Object.keys(v)){
+        if(["__proto__","prototype","constructor"].includes(k))bad(p+"."+k,"небезопасный ключ");
+        else safe(v[k],p+"."+k,depth+1);
+      }
+    }
+    safe(value,path);if(errors.length)return {errors,value:null};
+    function walk(v,s,p){
+      if(v===undefined&&s.optional)return undefined;
+      if(v===null&&s.nullable)return null;
+      if(s.enum&&!s.enum.includes(v)){bad(p,"недопустимое значение");return;}
+      if(s.type==="object"||s.type==="dictionary"){
+        if(!isRecord(v)){bad(p,"ожидается объект");return;}
+        const result={};
+        if(s.type==="object")for(const [k,field]of Object.entries(s.properties)){
+          const parsed=walk(v[k],field,p+"."+k);if(parsed!==undefined)result[k]=parsed;
+        }else{
+          if(Object.keys(v).length>s.maxLength)bad(p,"слишком много записей");
+          for(const k of Object.keys(v)){walk(k,s.keyType,p+".ключ");result[k]=walk(v[k],s.values,p+"."+k);}
+        }return result;
+      }
+      if(s.type==="array"){
+        if(!Array.isArray(v)){bad(p,"ожидается список");return;}
+        if(v.length>s.maxLength){bad(p,"слишком много записей");return [];}
+        return v.map((x,i)=>walk(x,s.items,p+"["+i+"]"));
+      }
+      if(s.type==="boolean"&&typeof v!=="boolean")bad(p,"ожидается да/нет");
+      else if(s.type==="string"){
+        if(typeof v!=="string"||v.length>(s.maxLength??Infinity)||v.trim().length<(s.minLength??0)||s.pattern&&!s.pattern.test(v))bad(p,"некорректный текст");
+      }else if(s.type==="number"){
+        if(typeof v!=="number"||!Number.isFinite(v)||v<(s.min??-Infinity)||v>(s.max??Infinity)||s.step&&Math.abs(v/s.step-Math.round(v/s.step))>1e-7)bad(p,"число вне диапазона или неверный шаг");
+      }else if(s.type==="localDate"&&!validDate(v))bad(p,"некорректная календарная дата");
+      else if(s.type==="isoTimestamp"&&(typeof v!=="string"||!/^\d{4}-\d\d-\d\dT([01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,3})?(?:Z|[+-]\d\d:\d\d)$/.test(v)||!validDate(v.slice(0,10))||!Number.isFinite(Date.parse(v))))bad(p,"некорректная дата/время");
+      return v;
+    }
+    const cleaned=walk(value,schema,path);return {value:cleaned,errors};
+  }
+  function validateRelations(s) {
+    const errors=validateProfile(s.profile),ids=new Set(),food=new Map([...FOOD,...s.customIngredients].map(i=>[i.id,i])),recipes=new Map([...RECIPES,...s.customRecipes].map(r=>[r.id,r]));
+    const fail=(path,msg)=>{if(errors.length<30)errors.push(path+": "+msg);};
+    const unique=(id,path,prefix)=>{if(!id.startsWith(prefix)||ids.has(id))fail(path,"неверный или повторный ID");ids.add(id);};
+    s.customIngredients.forEach((i,n)=>{
+      unique(i.id,"customIngredients["+n+"].id","ci_");
+      if(i.unit==="pcs"?i.kcalPerUnit===null||i.kcalPer100!==null:i.kcalPer100===null||i.kcalPerUnit!==null)fail("customIngredients["+n+"]","неверная калорийность для единицы");
+    });
+    s.customRecipes.forEach((r,n)=>{
+      const p="customRecipes["+n+"]";unique(r.id,p+".id","cr_");
+      if(!r.mealTypes.length||new Set(r.mealTypes).size!==r.mealTypes.length||!r.steps.length)fail(p,"приёмы пищи и шаги обязательны");
+      r.ingredients.forEach(i=>{if(!food.has(i.ingredientId))fail(p+".ingredients","неизвестный ингредиент");});
+      if(r.calorieMode==="manual"?(r.manualKcal===null):(!r.ingredients.length||r.manualKcal!==null))fail(p,"неверный источник калорий");
+      const kcal=r.calorieMode==="manual"?r.manualKcal:r.ingredients.reduce((v,i)=>{const f=food.get(i.ingredientId);return v+(f?i.quantity*(f.unit==="pcs"?f.kcalPerUnit:f.kcalPer100/100):0);},0);
+      if(!Number.isFinite(kcal)||r.suitableForAuto&&(!r.ingredients.length||r.opaquePackaged||r.prepMinutes>30||kcal<=0))fail(p,"блюдо не подходит для автоподбора");
+    });
+    for(const [key,list,known]of [["excludedIngredientIds",s.settings.excludedIngredientIds,food],["favoriteRecipeIds",s.settings.favoriteRecipeIds,recipes]]){
+      if(new Set(list).size!==list.length||list.some(id=>!known.has(id)))fail("settings."+key,"неизвестные или повторные ссылки");
+    }
+    function snapCheck(e,p){
+      const snap=e.snapshot;
+      if(snap.calorieMode==="manual"&&snap.baseKcal>3000)fail(p+".snapshot.baseKcal","ручные калории должны быть от 0 до 3000");
+      if(e.mealType!=="drink"&&snap.incompleteIngredients!==(snap.ingredients.length===0))fail(p+".snapshot","неверная отметка состава");
+      const ingredientIds=new Set();
+      snap.ingredients.forEach(i=>{
+        if(ingredientIds.has(i.ingredientId))fail(p+".snapshot.ingredients","повторный ингредиент");
+        ingredientIds.add(i.ingredientId);
+        if(food.has(i.ingredientId)&&food.get(i.ingredientId).unit!==i.unit)fail(p+".snapshot.ingredients","единица не совпадает со справочником");
+      });
+      if((snap.calorieMode||"ingredients")==="ingredients"&&Math.abs(snap.baseKcal-snap.ingredients.reduce((n,i)=>n+i.quantity*i.kcalRate,0))>1e-7)fail(p+".snapshot.baseKcal","не совпадает с составом");
+      if(e.drinkConfig){
+        const c=e.drinkConfig;if(e.mealType!=="drink"||e.portions!==1||c.milkMl>c.volumeMl||c.templateId==="water"&&(c.milkMl||c.sugarG))fail(p+".drinkConfig","неверный напиток");
+        const expected=drinkSnapshot(c);
+        if(Math.abs(expected.baseKcal-snap.baseKcal)>1e-7||(expected.ingredients.length!==snap.ingredients.length||expected.ingredients.some(i=>{const saved=snap.ingredients.find(x=>x.ingredientId===i.ingredientId);return !saved||["name","group","unit","quantity","kcalRate"].some(k=>saved[k]!==i[k]);})))fail(p+".snapshot","напиток не соответствует составу");
+      }else if(e.mealType==="drink")fail(p+".drinkConfig","нет параметров напитка");
+    }
+    Object.entries(s.days).forEach(([date,d])=>{
+      const p="days."+date;if(d.date!==date)fail(p+".date","не совпадает с ключом");
+      const counts={},plan=new Map();
+      d.planEntries.forEach((e,n)=>{
+        const path=p+".planEntries["+n+"]";unique(e.id,path+".id","pe_");plan.set(e.id,e);
+        counts[e.mealType]=(counts[e.mealType]||0)+1;
+        if(e.date!==date||MAIN.includes(e.mealType)&&counts[e.mealType]>1||!MAIN.includes(e.mealType)&&(counts[e.mealType]>100||e.locked))fail(path,"неверная дата или число слотов");
+        if(e.mealType==="drink"?e.recipeId!==null:!(typeof e.recipeId==="string"&&(recipes.has(e.recipeId)||e.recipeId.startsWith("cr_"))))fail(path+".recipeId","неверная ссылка рецепта");
+
+        snapCheck(e,path);
+      });
+      const links=new Set(),actualCounts={};
+      d.actualEntries.forEach((e,n)=>{
+        const path=p+".actualEntries["+n+"]";unique(e.id,path+".id","ae_");
+        actualCounts[e.mealType]=(actualCounts[e.mealType]||0)+1;
+        if(e.date!==date||date>todayDate()||!MAIN.includes(e.mealType)&&actualCounts[e.mealType]>100)fail(path+".date","неверная/будущая дата или слишком много записей");
+        if(e.sourcePlanEntryId!==null){
+          const source=plan.get(e.sourcePlanEntryId);
+          if(!source||links.has(e.sourcePlanEntryId)||source.mealType!==e.mealType)fail(path+".sourcePlanEntryId","повреждённая или повторная связь");
+          links.add(e.sourcePlanEntryId);
+        }
+        snapCheck(e,path);
+        if(e.sourcePlanEntryId===null&&e.snapshot.calorieMode==="manual"&&!e.snapshot.ingredients.length&&!e.snapshot.steps.length&&e.portions!==1)fail(path+".portions","свободная запись хранит калории всего съеденного, порция должна быть 1");
+        if(Math.abs(e.totalKcalRaw-e.snapshot.baseKcal*e.portions)>1e-7)fail(path+".totalKcalRaw","сумма не соответствует снимку и порции");
+      });
+    });
+    const weights=new Set();s.weightLog.forEach((w,n)=>{
+      unique(w.id,"weightLog["+n+"].id","wl_");
+      if(w.date>todayDate()||weights.has(w.date))fail("weightLog["+n+"].date","будущая или повторная дата");weights.add(w.date);
+    });
+    const historical=new Map();Object.values(s.days).forEach(d=>d.planEntries.forEach(e=>e.snapshot.ingredients.forEach(i=>historical.set(i.ingredientId,i))));
+    for(const id of Object.keys(s.pantry))if(!food.has(id)&&!historical.has(id))fail("pantry."+id,"неизвестный продукт");
+    for(const [key,m]of Object.entries(s.shoppingMarks)){
+      const [scope,start,end,id,...rest]=key.split(":");
+      if(rest.length||!["week","tomorrow"].includes(scope)||!validDate(start)||!validDate(end)||start>end||scope==="tomorrow"&&start!==end||scope==="week"&&addCalendarDays(start,6)<end||m.ingredientId!==id||!(food.has(id)||historical.has(id))||(food.get(id)||historical.get(id))?.unit!==m.unit)fail("shoppingMarks."+key,"неверный период или продукт");
+    }
+    if(s.lastGeneration&&mondayOf(s.lastGeneration.weekStart)!==s.lastGeneration.weekStart)fail("lastGeneration.weekStart","неделя должна начинаться с понедельника");
+    return errors;
+  }
+  function detachPlanLinks(day,ids) {day.actualEntries.forEach(a=>{if(ids.includes(a.sourcePlanEntryId))a.sourcePlanEntryId=null;});}
+  function putActual(s,date,entry) {
+    const next=clone(s),day=ensureDay(next,date);
+    if(date>todayDate())throw Error("Факт нельзя записать на будущую дату.");
+    const index=day.actualEntries.findIndex(a=>a.id===entry.id||entry.sourcePlanEntryId&&a.sourcePlanEntryId===entry.sourcePlanEntryId);
+    if(index>=0)day.actualEntries[index]=clone(entry);else day.actualEntries.push(clone(entry));
+    const errors=validateState(next);if(errors.length)throw Error(errors[0]);return next;
+  }
+  function archivePreview(s) {
+    const cutoff=addCalendarDays(todayDate(),-90),dates=Object.keys(s.days).filter(d=>d<cutoff).sort();
+    return {cutoff,dates,planCount:dates.reduce((n,d)=>n+s.days[d].planEntries.length,0),actualCount:dates.reduce((n,d)=>n+s.days[d].actualEntries.length,0)};
+  }
+  function trimArchive(s) {
+    const next=clone(s),preview=archivePreview(s);
+    preview.dates.forEach(d=>delete next.days[d]);
+    for(const key of Object.keys(next.shoppingMarks))if(key.split(":")[2]<preview.cutoff)delete next.shoppingMarks[key];
+    if(next.lastGeneration&&addCalendarDays(next.lastGeneration.weekStart,6)<preview.cutoff)next.lastGeneration=null;
+    return next;
+  }
+
+  const actualTotal=day=>(day?.actualEntries||[]).reduce((n,e)=>n+e.totalKcalRaw,0);
+  function removeActual(entry) {
+    confirmAction("Удалить съеденное?",entry.snapshot.name+". План останется.",()=>{
+      const next=clone(state);next.days[entry.date].actualEntries=next.days[entry.date].actualEntries.filter(a=>a.id!==entry.id);commit(next);
+    });
+  }
+  function openJournal(date) {
+    const day=state.days[date]||{actualEntries:[]},dialog=modal("Съедено · "+prettyDate(date));
+    dialog.append(node("p","Фактически: "+format(actualTotal(day))+" ккал","notice"));
+    const entries=[...day.actualEntries].sort((a,b)=>(a.time||"99:99").localeCompare(b.time||"99:99")||Date.parse(a.createdAt)-Date.parse(b.createdAt));
+    if(!entries.length)dialog.append(node("p","Пока нет записей съеденного. План не считается фактом."));
+    entries.forEach(entry=>{
+      const card=node("section",undefined,"card journal-entry");card.append(node("h3",entry.snapshot.name),node("p",MEALS[entry.mealType]+" · "+(entry.time||"Без времени")+" · "+format(entry.totalKcalRaw)+" ккал"));
+      if(entry.note)card.append(node("p",entry.note,"subtle"));
+      card.append(actionButton("Изменить",()=>editActual(date,null,entry)),actionButton("Удалить",()=>removeActual(entry)));dialog.append(card);
+    });
+    dialog.append(actionButton("Записать вне плана",()=>editActual(date),false),actionButton("Записать напиток",()=>editActual(date,{mealType:"drink",snapshot:drinkSnapshot({templateId:"coffee",volumeMl:200,milkMl:0,sugarG:0}),drinkConfig:{templateId:"coffee",volumeMl:200,milkMl:0,sugarG:0},portions:1}),false));
+  }
+  function editActual(date,plan=null,existing=null) {
+    if(date>todayDate()){announce("Съеденное можно записать за сегодня или прошлое.");return;}
+    existing=existing||state.days[date]?.actualEntries.find(a=>plan?.id&&a.sourcePlanEntryId===plan.id)||null;
+    const base=existing||plan,linkedId=existing?.sourcePlanEntryId||plan?.id||null,drink=base?.mealType==="drink";
+    const dialog=modal(existing?"Изменить съеденное":linkedId?"Подтвердить съеденное":"Записать вне плана",true),form=node("form");
+    const dayInput=inputField(form,"Дата съеденного","date",date);dayInput.max=todayDate();dayInput.disabled=!!linkedId;
+    const meal=selectField(form,"Приём пищи",Object.fromEntries(Object.entries(MEALS).filter(([k])=>drink?k==="drink":k!=="drink")),base?.mealType||"snack");meal.disabled=!!linkedId;
+    const time=inputField(form,"Время · необязательно","time",existing?.time||"");
+    let selectedSnapshot=base?.snapshot?clone(base.snapshot):null,mode=null,recipeSelect=null,name=null,kcal=null,portion=null,template=null,volume=null,milk=null,sugar=null;
+    if(drink){
+      const config=base.drinkConfig;
+      template=selectField(form,"Напиток",Object.fromEntries(Object.entries(DRINKS).map(([id,c])=>[id,c.name])),config.templateId);
+      volume=inputField(form,"Общий объём, мл · 50–1000, шаг 10","decimal",config.volumeMl);
+      milk=inputField(form,"Молоко, мл · 0–500","decimal",config.milkMl);sugar=inputField(form,"Сахар, г · 0–50","decimal",config.sugarG);
+      const change=()=>{if(template.value==="water"){milk.value=0;sugar.value=0;}milk.disabled=sugar.disabled=template.value==="water";};
+      template.addEventListener("change",()=>{milk.value=DRINKS[template.value].milk;sugar.value=0;change();});change();
+      let previousVolume=config.volumeMl;
+      form.append(node("p","Изменение объёма само не меняет добавки.","subtle"),actionButton("Пересчитать добавки пропорционально",()=>{
+        if(template.value==="water"){milk.value=0;sugar.value=0;return;}
+        const v=parseNumber(volume.value,50,1000,10),m=parseNumber(milk.value,0,500,1),s=parseNumber(sugar.value,0,50,1);
+        if(v.error||m.error||s.error){errorIn(form,"Сначала введите корректные значения.");return;}
+        milk.value=Math.round(m.value*v.value/previousVolume);sugar.value=Math.round(s.value*v.value/previousVolume);previousVolume=v.value;foodDirty=true;update();
+      }));
+    }else if(selectedSnapshot){
+      form.append(node("p",selectedSnapshot.name));portion=inputField(form,"Фактических порций · 0,25–4, шаг 0,25","decimal",base.portions);
+      if(selectedSnapshot.incompleteIngredients&&selectedSnapshot.calorieMode==="manual"&&!linkedId&&!selectedSnapshot.steps.length){
+        name=inputField(form,"Название","text",selectedSnapshot.name);name.maxLength=80;kcal=inputField(form,"Калории всего съеденного · 0–3000","decimal",base.totalKcalRaw??selectedSnapshot.baseKcal);portion.disabled=true;portion.value=1;
+      }
+    }else{
+      mode=selectField(form,"Источник",{free:"Свободная запись",recipe:"Из каталога"},"free");
+      recipeSelect=selectField(form,"Блюдо",Object.fromEntries(allRecipes().map(r=>[r.id,r.name])),allRecipes()[0]?.id);
+      name=inputField(form,"Название","text","");name.maxLength=80;
+      kcal=inputField(form,"Калории всего съеденного · 0–3000","decimal","");
+      portion=inputField(form,"Фактических порций · для блюда из каталога","decimal",1);
+      const change=()=>{const free=mode.value==="free";recipeSelect.parentElement.hidden=free;portion.parentElement.hidden=free;name.parentElement.hidden=!free;kcal.parentElement.hidden=!free;};
+      mode.addEventListener("change",change);change();
+    }
+    const note=inputField(form,"Заметка и описание порции · необязательно","text",existing?.note||"");note.maxLength=1000;
+    const info=node("p",undefined,"notice");form.append(info);
+    function read(){
+      let snapshot=selectedSnapshot,portions=1,drinkConfig=null;
+      if(drink){
+        const v=parseNumber(volume.value,50,1000,10),m=parseNumber(milk.value,0,500,1),s=parseNumber(sugar.value,0,50,1);
+        if(v.error||m.error||s.error||m.value>v.value)return {error:v.error||m.error||s.error||"Молока больше общего объёма."};
+        drinkConfig={templateId:template.value,volumeMl:v.value,milkMl:m.value,sugarG:s.value};snapshot=drinkSnapshot(drinkConfig);
+      }else if(!mode&&kcal||mode?.value==="free"){
+        const k=parseNumber(kcal.value,0,3000,.000001);if(k.error)return {error:k.error};
+        const title=name?name.value.trim():snapshot.name;if(!title)return {error:"Укажите название."};
+        snapshot={name:title,sourceType:"homemade",baseKcal:k.value,ingredients:[],steps:[],incompleteIngredients:true,opaquePackaged:false,calorieMode:"manual"};
+      }else{
+        if(mode)snapshot=recipeSnapshot(recipeById(recipeSelect.value));
+        const q=parseNumber(portion.value,.25,4,.25);if(q.error)return {error:q.error};portions=q.value;
+      }
+      return {snapshot,portions,drinkConfig,totalKcalRaw:snapshot.baseKcal*portions};
+    }
+    const update=()=>{try{const r=read();info.textContent=r.error||"Факт: "+format(r.totalKcalRaw)+" ккал. План и покупки не изменятся.";}catch{info.textContent="Выберите блюдо.";}};form.addEventListener("input",update);update();
+    const save=node("button","Сохранить съеденное","button primary");save.type="submit";form.append(save);dialog.append(form);
+    form.addEventListener("submit",event=>{
+      event.preventDefault();const result=read();
+      if(result.error||!validDate(dayInput.value)||dayInput.value>todayDate()){errorIn(form,result.error||"Дата должна быть сегодня или в прошлом.");return;}
+      const entry={id:existing?.id||uid("ae_"),date:dayInput.value,mealType:meal.value,time:time.value||null,sourcePlanEntryId:linkedId,snapshot:result.snapshot,portions:result.portions,drinkConfig:result.drinkConfig,totalKcalRaw:result.totalKcalRaw,note:note.value.trim(),createdAt:existing?.createdAt||new Date().toISOString()};
+      try{
+        let next=clone(state);if(existing&&existing.date!==entry.date)next.days[existing.date].actualEntries=next.days[existing.date].actualEntries.filter(a=>a.id!==existing.id);
+        next=putActual(next,entry.date,entry);if(commit(next)){closeFood(true);announce("Съеденное записано.");}
+      }catch(error){errorIn(form,error.message);}
+    });
+  }
+  let weightPeriod="all";
+  function weightPoints(records) {
+    const sorted=[...records].sort((a,b)=>a.date.localeCompare(b.date));if(!sorted.length)return {points:[],min:0,max:0};
+    const values=sorted.map(r=>r.weightKg),low=Math.min(...values),high=Math.max(...values),pad=Math.max(1,(high-low)*.1),min=low-pad,max=high+pad;
+    const calendar=d=>{const [y,m,day]=d.split("-").map(Number);return Date.UTC(y,m-1,day);},first=calendar(sorted[0].date),last=calendar(sorted.at(-1).date);
+    return {min,max,points:sorted.map(r=>({...r,x:first===last?174:44+(calendar(r.date)-first)/(last-first)*260,y:144-(r.weightKg-min)/(max-min)*128}))};
+  }
+  function svgNode(tag,attrs={},text) {
+    const el=document.createElementNS("http://www.w3.org/2000/svg",tag);Object.entries(attrs).forEach(([k,v])=>el.setAttribute(k,String(v)));if(text!==undefined)el.textContent=text;return el;
+  }
+  function renderWeight(parent) {
+    parent.replaceChildren();$("sectionEyebrow").textContent="Спокойно наблюдаем";$("sectionTitle").textContent="Ваш вес";$("weekBar").hidden=true;
+    const sorted=[...state.weightLog].sort((a,b)=>a.date.localeCompare(b.date)),latest=sorted.at(-1),summary=node("section",undefined,"card");
+    if(latest)summary.append(summaryList([["Последнее измерение",format(latest.weightKg,1)+" кг · "+prettyDate(latest.date)],["От первого измерения",format(latest.weightKg-sorted[0].weightKg,1)+" кг"],["Желаемый вес",state.profile.goalWeightKg===null?"Не указан":format(state.profile.goalWeightKg,1)+" кг"]]));
+    else summary.append(node("p","Пока нет измерений. Добавьте первое, когда удобно."));
+    summary.append(actionButton("Добавить вес",()=>editWeight(),false));parent.append(summary);
+    const tabs=node("div",undefined,"button-row weight-tabs");for(const [v,label]of [["30","30 дней"],["90","90 дней"],["all","Всё"]]){
+      const b=actionButton(label,()=>{weightPeriod=v;render();},weightPeriod!==v);b.setAttribute("aria-pressed",String(weightPeriod===v));tabs.append(b);
+    }parent.append(tabs);
+    const records=sorted.filter(r=>weightPeriod==="all"||r.date>=addCalendarDays(todayDate(),1-Number(weightPeriod))),chart=weightPoints(records),panel=node("section",undefined,"card weight-chart");
+    if(records.length){
+      const svg=svgNode("svg",{viewBox:"0 0 320 180",role:"img","aria-label":"Изменения веса. Точные значения в таблице ниже."});
+      svg.append(svgNode("polyline",{points:chart.points.map(p=>p.x+","+p.y).join(" "),fill:"none",stroke:"var(--color-primary)","stroke-width":2}));
+      chart.points.forEach(p=>svg.append(svgNode("circle",{cx:p.x,cy:p.y,r:3,fill:"var(--color-primary)"})));
+      svg.append(svgNode("text",{x:3,y:20},format(chart.max,1)),svgNode("text",{x:3,y:146},format(chart.min,1)));
+      const short=d=>d.slice(8,10)+"."+d.slice(5,7)+"."+d.slice(0,4);
+      svg.append(svgNode("text",{x:44,y:172,"text-anchor":"start"},short(records[0].date)));
+      if(records.length>1)svg.append(svgNode("text",{x:304,y:172,"text-anchor":"end"},short(records.at(-1).date)));
+      const goal=state.profile.goalWeightKg;
+      if(goal!==null){
+        if(goal>=chart.min&&goal<=chart.max){const y=144-(goal-chart.min)/(chart.max-chart.min)*128;svg.append(svgNode("line",{x1:44,x2:304,y1:y,y2:y,stroke:"var(--color-muted)","stroke-dasharray":"4 4"}));}
+        panel.append(node("p","Цель: "+format(goal,1)+" кг · пунктир, если попадает в диапазон","subtle"));
+      }
+      panel.append(svg);if(records.length===1)panel.append(node("p","Добавь ещё измерение для сравнения."));
+    }else panel.append(node("p","За этот период измерений нет."));
+    const table=node("table",undefined,"weight-table"),caption=node("caption","Измерения веса"),thead=node("thead"),header=node("tr");["Дата","Вес, кг","Действия"].forEach(t=>header.append(node("th",t)));thead.append(header);table.append(caption,thead);
+    const tbody=node("tbody");[...records].reverse().forEach(r=>{const row=node("tr"),date=node("td",r.date),weight=node("td",format(r.weightKg,1)),actions=node("td");actions.append(actionButton("Изменить",()=>editWeight(r)),actionButton("Удалить",()=>confirmAction("Удалить измерение?",prettyDate(r.date),()=>{const next=clone(state);next.weightLog=next.weightLog.filter(w=>w.id!==r.id);commit(next);})));row.append(date,weight,actions);tbody.append(row);});
+    table.append(tbody);panel.append(table);parent.append(panel);
+  }
+  function editWeight(existing=null) {
+    const dialog=modal(existing?"Изменить вес":"Добавить вес",true),form=node("form"),date=inputField(form,"Дата измерения","date",existing?.date||todayDate());date.max=todayDate();
+    const weight=inputField(form,"Вес, кг · 30–300, шаг 0,1","decimal",existing?.weightKg||""),note=inputField(form,"Заметка · необязательно","text",existing?.note||"");note.maxLength=300;
+    const save=node("button","Сохранить вес","button primary");save.type="submit";form.append(save);dialog.append(form);
+    form.addEventListener("submit",event=>{
+      event.preventDefault();const value=parseNumber(weight.value,30,300,.1);
+      if(value.error||!validDate(date.value)||date.value>todayDate()){errorIn(form,value.error||"Дата должна быть сегодня или в прошлом.");return;}
+      const collision=state.weightLog.find(w=>w.date===date.value&&w.id!==existing?.id),next=clone(state);
+      next.weightLog=next.weightLog.filter(w=>w.id!==existing?.id&&w.date!==date.value);next.weightLog.push({id:existing?.id||collision?.id||uid("wl_"),date:date.value,weightKg:value.value,note:note.value.trim()});
+      const finish=()=>{if(commit(next)){closeFood(true);announce(storageError?"Вес принят в память, но не сохранён. Скачайте текущие данные.":"Вес сохранён. Калорийный ориентир не менялся.");}};
+      if(collision)confirmAction("Заменить измерение?",date.value+": "+format(collision.weightKg,1)+" → "+format(value.value,1)+" кг",finish);else finish();
+    });
+  }
+
+  function textareaField(parent,label,value,maxLength) {
+    const wrap=node("div",undefined,"field"),id=uid("field_"),l=node("label",label),input=node("textarea");l.htmlFor=id;input.id=id;input.value=value;input.maxLength=maxLength;input.rows=3;wrap.append(l,input);parent.append(wrap);return input;
+  }
+  function deleteRecipe(recipe) {
+    confirmAction("Удалить своё блюдо?",recipe.name+". Запланированные и съеденные записи сохранятся.",()=>{
+      const next=clone(state);next.customRecipes=next.customRecipes.filter(r=>r.id!==recipe.id);next.settings.favoriteRecipeIds=next.settings.favoriteRecipeIds.filter(id=>id!==recipe.id);commit(next);
+    });
+  }
+  function editRecipe(original=null) {
+    const isOwn=original?.id.startsWith("cr_"),recipe=original?clone(original):{name:"",mealTypes:["snack"],prepMinutes:10,sourceType:"homemade",ingredients:[],calorieMode:"ingredients",manualKcal:null,steps:[],note:"",suitableForAuto:false,opaquePackaged:false};
+    const dialog=modal(isOwn?"Изменить своё блюдо":"Создать своё блюдо",true),form=node("form");
+    const name=inputField(form,"Название блюда · до 80 символов","text",recipe.name);name.maxLength=80;
+    const types=node("fieldset"),legend=node("legend","Приёмы пищи");types.append(legend);const mealInputs={};
+    for(const key of [...MAIN,"snack"]){const label=checkField(MEALS[key],recipe.mealTypes.includes(key),()=>{});mealInputs[key]=label.querySelector("input");types.append(label);}form.append(types);
+    const minutes=inputField(form,"Готовка, минут · 0–240","decimal",recipe.prepMinutes);
+    const source=selectField(form,"Вид блюда",{homemade:"Домашнее",ready:"Готовое покупное"},recipe.sourceType);
+    const mode=selectField(form,"Источник калорий",{ingredients:"Рассчитать из ингредиентов",manual:"Указать вручную"},recipe.calorieMode);
+    const manual=inputField(form,"Калории на 1 порцию · 0–3000","decimal",recipe.manualKcal??"");
+    const ingredients=clone(recipe.ingredients),ingredientArea=node("section",undefined,"card ingredient-editor"),list=node("div");ingredientArea.append(node("h3","Ингредиенты на 1 порцию"),list);
+    let choices=()=>Object.fromEntries(allFood().filter(i=>!i.archived||ingredients.some(x=>x.ingredientId===i.id)).map(i=>[i.id,i.name+" · "+(i.unit==="g"?"г":i.unit==="ml"?"мл":"шт.")]));
+    const selected=selectField(ingredientArea,"Ингредиент",choices(),allFood().find(i=>!i.archived)?.id);
+    const quantity=inputField(ingredientArea,"Количество в единице выбранного продукта","decimal","");
+    const refresh=()=>{
+      list.replaceChildren();ingredients.forEach((i,n)=>{const row=node("div",undefined,"ingredient-line");row.append(node("span",foodById(i.ingredientId).name+" — "+format(i.quantity,3)+" "+foodById(i.ingredientId).unit),actionButton("Убрать",()=>{ingredients.splice(n,1);foodDirty=true;refresh();}));list.append(row);});
+      update();
+    };
+    ingredientArea.append(actionButton("Добавить ингредиент",()=>{
+      const q=parseNumber(quantity.value,.000001,100000,.000001);if(q.error||ingredients.length>=40||ingredients.some(i=>i.ingredientId===selected.value)){errorIn(ingredientArea,q.error||"До 40 разных ингредиентов. Этот продукт уже добавлен.");return;}
+      ingredients.push({ingredientId:selected.value,quantity:q.value});quantity.value="";foodDirty=true;refresh();
+    }));
+    const newArea=node("details",undefined,"new-ingredient");newArea.append(node("summary","Создать новый продукт"));
+    const newName=inputField(newArea,"Название продукта · до 60 символов","text","");newName.maxLength=60;
+    const group=selectField(newArea,"Отдел",Object.fromEntries([...new Set(FOOD.map(i=>i.group))].map(g=>[g,g])),"другое");
+    const unit=selectField(newArea,"Единица",{g:"Граммы",ml:"Миллилитры",pcs:"Штуки"},"g");
+    const rate=inputField(newArea,"Ккал на 100 г/мл или на 1 штуку · 0–1000","decimal","");
+    newArea.append(actionButton("Сохранить продукт",()=>{
+      const k=parseNumber(rate.value,0,1000,.000001);if(k.error||!newName.value.trim()){errorIn(newArea,k.error||"Укажите название продукта.");return;}
+      const ingredient={id:uid("ci_"),name:newName.value.trim(),group:group.value,unit:unit.value,kcalPer100:unit.value==="pcs"?null:k.value,kcalPerUnit:unit.value==="pcs"?k.value:null,archived:false};
+      const next=clone(state);next.customIngredients.push(ingredient);
+      if(commit(next)){selected.replaceChildren();Object.entries(choices()).forEach(([v,text])=>{const o=node("option",text);o.value=v;selected.append(o);});selected.value=ingredient.id;newArea.open=false;newName.value="";rate.value="";announce(storageError?"Продукт принят в память, но не сохранён.":"Продукт сохранён.");}
+    }));ingredientArea.append(newArea);form.append(ingredientArea);
+    const steps=textareaField(form,"Приготовление · 1–10 шагов, каждый с новой строки",recipe.steps.join("\n"),10010);
+    const note=textareaField(form,"Заметка · до 1000 символов",recipe.note||"",1000);
+    const autoLabel=checkField("Разрешить в автоматическом подборе",recipe.suitableForAuto,()=>{}),auto=autoLabel.querySelector("input");
+    const opaqueLabel=checkField("Непрозрачная упаковка: полный состав не перечислен",!!recipe.opaquePackaged,()=>{}),opaque=opaqueLabel.querySelector("input");form.append(opaqueLabel,node("p","Если продукт записан как готовое блюдо по упаковке, отметьте неизвестный состав. Для подбора нужен полный список ингредиентов.","subtle"),autoLabel);
+    const info=node("p",undefined,"notice");form.append(info);
+    function update(){
+      manual.parentElement.hidden=mode.value!=="manual";
+      const total=ingredients.reduce((n,i)=>{const f=foodById(i.ingredientId);return n+i.quantity*(f.unit==="pcs"?f.kcalPerUnit:f.kcalPer100/100);},0);
+      const value=mode.value==="manual"?parseNumber(manual.value,0,3000,.000001).value:total;
+      info.textContent=Number.isFinite(value)?"1 порция: "+format(value)+" ккал":"Введите калории.";
+      const eligibleForAuto=ingredients.length>0&&!opaque.checked&&parseNumber(minutes.value,0,240,1).value<=30&&value>0;
+      auto.disabled=!eligibleForAuto;if(auto.disabled)auto.checked=false;
+    }
+    form.addEventListener("input",update);refresh();
+    const save=node("button","Сохранить блюдо","button primary");save.type="submit";form.append(save);dialog.append(form);
+    form.addEventListener("submit",event=>{
+      event.preventDefault();const min=parseNumber(minutes.value,0,240,1),k=mode.value==="manual"?parseNumber(manual.value,0,3000,.000001):{value:null};
+      const nextRecipe={id:isOwn?recipe.id:uid("cr_"),name:name.value.trim(),mealTypes:Object.keys(mealInputs).filter(k=>mealInputs[k].checked),prepMinutes:min.value,sourceType:source.value,ingredients:clone(ingredients),calorieMode:mode.value,manualKcal:k.value,steps:steps.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean),note:note.value.trim(),suitableForAuto:auto.checked,opaquePackaged:opaque.checked};
+      if(min.error||k.error){errorIn(form,min.error||k.error);return;}
+      const next=clone(state);next.customRecipes=next.customRecipes.filter(r=>r.id!==nextRecipe.id);next.customRecipes.push(nextRecipe);
+      const errors=validateState(next);if(errors.length){errorIn(form,errors[0]);return;}
+      if(commit(next)){closeFood(true);announce(storageError?"Рецепт принят в память, но не сохранён.":"Рецепт сохранён. Записи меню и съеденного не изменились.");}
+    });
+  }
+  function manageIngredients() {
+    const dialog=modal("Свои продукты");dialog.append(node("p","Скрытые продукты сохраняются в рецептах и истории. Встроенные продукты не изменяются."));
+    if(!state.customIngredients.length)dialog.append(node("p","Свои продукты можно создать в форме своего блюда."));
+    state.customIngredients.forEach(i=>dialog.append(checkField(i.name+" · скрыть из выбора",!!i.archived,v=>{const next=clone(state);next.customIngredients.find(x=>x.id===i.id).archived=v;commit(next);})));
+  }
+
+  let quotaShown=false;
+  function strictSave(candidate) {
+    const result=checkStructure(candidate,STATE_SCHEMA);const errors=result.errors.length?result.errors:validateRelations(result.value);
+    if(errors.length)return {error:errors[0]};
+    if(conflict)return {error:"Данные изменились в другой вкладке. Обновите страницу."};
+    const next=result.value;next.updatedAt=new Date().toISOString();
+    try{
+      if(window.localStorage.getItem(KEY)!==lastSavedRaw){markConflict();return {error:"Данные изменились в другой вкладке. Обновите страницу."};}
+      const raw=JSON.stringify(next);window.localStorage.setItem(KEY,raw);
+      state=next;rememberIds(state);lastSavedRaw=raw;originalRaw=raw;storageError=null;unsaved=false;recovery=false;render();return {ok:true};
+    }catch(error){return {error:"Не удалось записать данные. Текущее состояние не заменено. "+(error.name==="QuotaExceededError"?"Недостаточно места.":error.name==="SecurityError"?"Браузер запретил доступ к хранилищу.":"Повторите попытку или сохраните резервную копию.")};}
+  }
+  function readBackup(text) {
+    let raw;try{raw=JSON.parse(text);}catch{throw Error("Файл не является корректным JSON.");}
+    const envelope=obj({appId:en(["menu-without-drama"]),schemaVersion:{type:"number",enum:[1]},catalogVersion:{type:"number",enum:[1]},exportedAt:stamp,state:STATE_SCHEMA});
+    const result=checkStructure(raw,envelope,"backup");
+    if(result.errors.length)throw Error(result.errors[0]);
+    const errors=validateRelations(result.value.state);if(errors.length)throw Error(errors[0]);return result.value;
+  }
+  function importDialog() {
+    const dialog=modal("Импорт резервной копии"),input=inputField(dialog,"Файл JSON · до 5 МБ","file");input.accept=".json,application/json";
+    const preview=node("div");dialog.append(node("p","Импорт полностью заменяет данные этого браузера. До подтверждения ничего не меняется."),preview);
+    input.addEventListener("change",async()=>{
+      preview.replaceChildren();const file=input.files?.[0];if(!file)return;
+      if(file.size>5*1024*1024){errorIn(preview,"Файл больше 5 МБ.");return;}
+      try{
+        const backup=readBackup(await file.text());if(foodDialog!==dialog)return;
+        preview.append(node("p","Копия: "+new Date(backup.exportedAt).toLocaleString("ru-RU")),summaryList([["Дней",Object.keys(backup.state.days).length],["Своих блюд",backup.state.customRecipes.length],["Измерений",backup.state.weightLog.length]]),node("p","Текущие данные будут заменены.","warning"),actionButton("Скачать текущую копию",emergencyExport));
+        preview.append(actionButton("Заменить данные",()=>{
+          const result=strictSave(backup.state);if(!result.ok){errorIn(preview,result.error);return;}
+          showStart=false;selectedWeek=mondayOf(todayDate());selectedDay=todayDate();activeTab="week";closeFood(true);render();announce("Резервная копия восстановлена.");
+        },false),actionButton("Отмена",()=>closeFood(true)));
+      }catch(error){errorIn(preview,error.message);}
+    });
+  }
+  function showQuotaDialog() {
+    if(!storageError||storageError.name!=="QuotaExceededError")return;
+    const dialog=modal("Место для данных закончилось");
+    dialog.append(node("p","Последние изменения пока не сохранены. Скачайте полную копию перед очисткой."),
+      actionButton("Скачать полную копию",emergencyExport,false),
+      actionButton("Посмотреть очистку архива",archiveDialog),
+      actionButton("Продолжить без сохранения",()=>closeFood(true)));
+  }
+  function archiveDialog() {
+    const preview=archivePreview(state),dialog=modal("Очистка архива");
+    dialog.append(node("p","Можно удалить дни строго раньше "+preview.cutoff+". Вес, профиль, свои блюда и будущие даты сохранятся."),
+      summaryList([["Дней",preview.dates.length],["Плановых записей",preview.planCount],["Съеденных записей",preview.actualCount],["Диапазон",preview.dates.length?preview.dates[0]+" — "+preview.dates.at(-1):"Нет старых дней"]]),
+      actionButton("Скачать полную копию",emergencyExport,false));
+    const label=checkField("Резервная копия сохранена мной",false,()=>{}),check=label.querySelector("input");dialog.append(label);
+    dialog.append(actionButton("Подтвердить очистку",()=>{
+      if(!check.checked){errorIn(dialog,"Сначала сохраните полную копию и поставьте отметку.");return;}
+      const next=trimArchive(state);confirmAction("Удалить перечисленные архивные дни?",preview.dates.length+" дней, "+preview.planCount+" плановых и "+preview.actualCount+" фактических записей. Измерения веса останутся.",()=>{
+        const result=strictSave(next);if(!result.ok){const error=modal("Архив не удалён");error.append(node("p",result.error),actionButton("Скачать текущие данные",emergencyExport));return;}
+        announce("Архив очищен. Вес и будущие дни сохранены.");
+      });
+    }));
+  }
+  function requestReset() {
+    $("resetWord").value="";$("resetError").textContent="";openModal($("resetDialog"),$("resetWord"));
+  }
+  function renderSettings(parent) {
+    parent.replaceChildren();$("sectionEyebrow").textContent="План подстраивается под вас";$("sectionTitle").textContent="Настройки";$("weekBar").hidden=true;
+    const grid=node("div",undefined,"settings-grid"),profile=node("section",undefined,"card");
+    profile.append(node("h2","Личный профиль"),summaryList(profileSummary()),button("Изменить профиль","open-profile"));grid.append(profile);
+    const preferences=node("section",undefined,"card");
+    preferences.append(node("h2","Предпочтения"),summaryList([["Готовка","До "+state.settings.maxPrepMinutes+" минут"],["Готовые блюда",state.settings.allowReadyMeals?"Разрешены":"Не подбирать"],["Повторение",state.settings.allowRepeats?"Можно":"Без повторов"],["Автоперекус",state.settings.autoSnack?"Добавлять":"Не добавлять"]]),button("Изменить предпочтения","edit-preferences",true));
+    for(const [key,text]of [["tipsEnabled","Мягкие подсказки и мотивация"],["animationsEnabled","Анимации"]])preferences.append(checkField(text,state.settings[key],v=>{const next=clone(state);next.settings[key]=v;commit(next);}));grid.append(preferences);
+    const excluded=node("section",undefined,"card");excluded.append(node("h2","Исключения"),node("p",state.settings.excludedIngredientIds.map(id=>foodById(id)?.name||id).join(", ")||"Нет исключений"),button("Изменить исключения","open-profile",true),actionButton("Свои продукты",manageIngredients),button("Продукты дома","pantry",true));grid.append(excluded);
+    const copies=node("section",undefined,"card");
+    const bytes=JSON.stringify(state).length*2;
+    copies.append(node("h2","Данные и резервные копии"),node("p","Копия содержит личные параметры. Телефон и компьютер хранят независимые данные."),
+      actionButton("Экспорт JSON",emergencyExport,false),actionButton("Импорт JSON",importDialog),actionButton("Очистить архив",archiveDialog),actionButton("Удалить все данные",requestReset),
+      node("p","Объём данных: примерно "+format(bytes/1024,1)+" КиБ. Это оценка, а не доступная квота.","subtle"));
+    if(bytes>=3.5*1024*1024)copies.append(node("p","Данных много — сохраните копию и посмотрите очистку архива.","warning"));grid.append(copies);parent.append(grid);
+  }
+  function renderTip(parent) {
+    if(!state.settings.tipsEnabled||storageError||conflict)return;
+    const tomorrow=addCalendarDays(todayDate(),1),day=state.days[tomorrow],full=dayDates(selectedWeek).every(d=>MAIN.every(m=>state.days[d]?.planEntries.some(e=>e.mealType===m)));
+    let text="План можно менять — он не начальник",handler=null,label=null;
+    if(!day?.planEntries.some(e=>MAIN.includes(e.mealType))){
+      text="Завтра пока пусто. Выберем еду заранее?";label="Меню на завтра";handler=()=>{selectedWeek=mondayOf(tomorrow);selectedDay=tomorrow;activeTab="week";render();};
+    }else if(aggregateShopping(state,tomorrow,tomorrow).length||unclearShopping(state,tomorrow,tomorrow).length){
+      text="Меню на завтра готово — проверь покупки";label="Покупки на завтра";handler=()=>{shoppingScope="tomorrow";activeTab="shopping";render();};
+    }else if(full)text="Ужин уже придуман. Одно расследование отменяется";
+    const tip=node("aside",undefined,"notice notice-tip");tip.append(node("p",text));if(handler)tip.append(actionButton(label,handler));parent.append(tip);
+  }
+  function unclearShopping(s,start,end) {
+    const items=new Map();
+    Object.values(s.days).filter(d=>d.date>=start&&d.date<=end).forEach(d=>d.planEntries.filter(e=>e.mealType!=="drink"&&e.snapshot.incompleteIngredients).forEach(e=>{
+      const key=e.snapshot.name,old=items.get(key);if(old)old.portions+=e.portions;else items.set(key,{name:key,portions:e.portions,snapshot:e.snapshot});
+    }));return [...items.values()];
+  }
+
+  function rememberIds(s) {
+    [...s.customIngredients,...s.customRecipes,...s.weightLog,...Object.values(s.days).flatMap(d=>[...d.planEntries,...d.actualEntries])].forEach(item=>issuedIds.add(item.id));
+  }
+
+  function copyRestriction(entry,s) {
+    const excluded=conflicts(entry,s.settings);if(excluded.length)return "исключены "+excluded.join(", ");
+    if(entry.snapshot.sourceType==="ready"&&!s.settings.allowReadyMeals)return "готовые блюда не разрешены в предпочтениях";
+    const recipe=[...RECIPES,...s.customRecipes].find(r=>r.id===entry.recipeId);
+    if(recipe&&recipe.prepMinutes>s.settings.maxPrepMinutes)return "время приготовления превышает лимит";
+    return null;
+  }
+
+  function updatePlanRecipe(entry,recipe) {
+    if(linked(state.days[entry.date],entry)){announce("Запись со съеденным не обновляется из каталога.");return;}
+    const snapshot=recipeSnapshot(recipe),dialog=modal("Обновить запланированное блюдо?");
+    dialog.append(node("p","Сохранённый состав будет заменён текущим рецептом. Съеденное не изменится."));
+    const excluded=conflicts({snapshot},state.settings);if(excluded.length){dialog.append(node("p","Сначала измените ограничения: "+excluded.join(", "),"warning"));return;}
+    let check=null;
+    if(snapshot.incompleteIngredients||snapshot.opaquePackaged){const label=checkField("Я проверила состав и ограничения по упаковке для этого обновления",false,()=>{});check=label.querySelector("input");dialog.append(label);}
+    dialog.append(actionButton("Обновить",()=>{
+      if(check&&!check.checked){errorIn(dialog,"Подтвердите проверку состава.");return;}
+      const next=clone(state),target=next.days[entry.date].planEntries.find(e=>e.id===entry.id);target.snapshot=clone(snapshot);target.origin="manual";
+      if(commit(next)){closeFood(true);announce(storageError?"Изменение принято в память, но не сохранено.":"Запланированное блюдо обновлено.");}
+    },false),actionButton("Отмена",()=>closeFood(true)));
+  }
   bindFoodEvents();buildIngredientOptions();bindEvents();loadState();render();
+  document.addEventListener("click",event=>{if(event.target.closest("[data-action=import]"))importDialog();});
+  window.PlannerComplete=Object.freeze({checkStructure,STATE_SCHEMA,readBackup,validateRelations,putActual,detachPlanLinks,archivePreview,trimArchive,weightPoints,unclearShopping});
 })();
