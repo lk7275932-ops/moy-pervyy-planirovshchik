@@ -1625,7 +1625,7 @@
     const copies=node("section",undefined,"card");
     const bytes=JSON.stringify(state).length*2;
     copies.append(node("h2","Данные и резервные копии"),node("p","Копия содержит личные параметры. Телефон и компьютер хранят независимые данные."),
-      actionButton("Экспорт JSON",emergencyExport,false),actionButton("Импорт JSON",importDialog),actionButton("Очистить архив",archiveDialog),actionButton("Удалить все данные",requestReset),
+      actionButton("Скачать резервную копию",emergencyExport,false),actionButton("Восстановить из копии",importDialog),actionButton("Очистить архив",archiveDialog),actionButton("Удалить все данные",requestReset),
       node("p","Объём данных: примерно "+format(bytes/1024,1)+" КиБ. Это оценка, а не доступная квота.","subtle"));
     if(bytes>=3.5*1024*1024)copies.append(node("p","Данных много — сохраните копию и посмотрите очистку архива.","warning"));grid.append(copies);parent.append(grid);
   }
